@@ -374,6 +374,8 @@ int main(int argc,char** argv){
         }
         char* buffer=malloc(buffersize);
 
+        write(fifoArray[w]->read_fd,&numWorkers,sizeof(int));
+
         CountryData* temp=countryArray[w];
         while(temp!=NULL){
             memset(buffer,0,buffersize);
@@ -389,32 +391,32 @@ int main(int argc,char** argv){
         free(buffer);
     }
 
-    for(int w=0;w<numWorkers;w++){
-        char* buffer=malloc(buffersize);
-        memset(buffer,0,buffersize);
-        while(1){
-            read(fifoArray[w]->write_fd,buffer,buffersize);
-            if(strcmp(buffer,"done")==0){
-                printf("\n\n");
-                break;
-            }
-            printf("\n\n\n%s\n",buffer);
-            memset(buffer,0,buffersize);
-            read(fifoArray[w]->write_fd,buffer,buffersize);
-            printf("\n%s\n",buffer);
-            memset(buffer,0,buffersize);
-            read(fifoArray[w]->write_fd,buffer,buffersize);
-            int* agenums=malloc(4*sizeof(int));
-            memcpy(agenums,buffer,4*sizeof(int));
-            printf("\nAge range 0-20 years: %d\n",agenums[0]);
-            printf("\nAge range 21-40 years: %d\n",agenums[1]);
-            printf("\nAge range 41-60 years: %d\n",agenums[2]);
-            printf("\nAge range 61+ years: %d\n",agenums[3]);
-            free(agenums);
-            memset(buffer,0,buffersize);
-        }
-        free(buffer);
-    }
+    // for(int w=0;w<numWorkers;w++){
+    //     char* buffer=malloc(buffersize);
+    //     memset(buffer,0,buffersize);
+    //     while(1){
+    //         read(fifoArray[w]->write_fd,buffer,buffersize);
+    //         if(strcmp(buffer,"done")==0){
+    //             printf("\n\n");
+    //             break;
+    //         }
+    //         printf("\n\n\n%s\n",buffer);
+    //         memset(buffer,0,buffersize);
+    //         read(fifoArray[w]->write_fd,buffer,buffersize);
+    //         printf("\n%s\n",buffer);
+    //         memset(buffer,0,buffersize);
+    //         read(fifoArray[w]->write_fd,buffer,buffersize);
+    //         int* agenums=malloc(4*sizeof(int));
+    //         memcpy(agenums,buffer,4*sizeof(int));
+    //         printf("\nAge range 0-20 years: %d\n",agenums[0]);
+    //         printf("\nAge range 21-40 years: %d\n",agenums[1]);
+    //         printf("\nAge range 41-60 years: %d\n",agenums[2]);
+    //         printf("\nAge range 61+ years: %d\n",agenums[3]);
+    //         free(agenums);
+    //         memset(buffer,0,buffersize);
+    //     }
+    //     free(buffer);
+    // }
     cnumArrGlob=cnumArr;
     buffersizeGlob=buffersize;
     fifoArrayGlob=fifoArray;

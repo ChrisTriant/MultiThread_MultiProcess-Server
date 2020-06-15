@@ -202,7 +202,8 @@ int main(int argc,char** argv){
     }
 
     char** countryArr=malloc(cnum*sizeof(char*));
-
+    int numWorkers;
+    read(read_fd,&numWorkers,sizeof(int));
     CountryData* countryList=NULL;
     for(int i=0;i<cnum;i++){
         countryArr[i]=malloc(buffersize*sizeof(char));
@@ -240,8 +241,8 @@ int main(int argc,char** argv){
         close(sock);
         exit(1);
     }
-    int buff;
-    buff=buffersize;
+    int buff=buffersize;
+    write(sock,&numWorkers,sizeof(int));
     write(sock,&buff,sizeof(int));
 
     int countryHashtableNumOfEntries=10;
@@ -305,16 +306,15 @@ int main(int argc,char** argv){
             }
             free(filepath);
 
-
             memset(buffer,0,buffersize);
             strcpy(buffer,filenameArr[j]);
-            write(write_fd,buffer,buffersize);
+            //write(write_fd,buffer,buffersize);
             write(sock,buffer,buffersize);
             memset(buffer,0,buffersize);
             strcpy(buffer,countryArr[i]);
-            write(write_fd,buffer,buffersize);
+            //write(write_fd,buffer,buffersize);
             write(sock,buffer,buffersize);
-            workerStats(statsHT,write_fd,buffersize);
+            //workerStats(statsHT,write_fd,buffersize);
             workerStats(statsHT,sock,buffersize);
             deleteHashTable(statsHT);  
         }
@@ -324,7 +324,7 @@ int main(int argc,char** argv){
     }
     memset(buffer,0,buffersize);
     strcpy(buffer,"done");
-    write(write_fd,buffer,buffersize);
+    //write(write_fd,buffer,buffersize);
     write(sock,buffer,buffersize);
     close(sock);
     memset(buffer,0,buffersize);

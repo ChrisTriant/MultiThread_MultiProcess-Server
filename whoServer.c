@@ -24,9 +24,16 @@ typedef struct circ_buffer{
 }circ_buffer;
 
 
-void* statistic_socket(void* arguments);
+void* statistic_n_clients(void* arguments);
 int circ_buf_push(circ_buffer* circ_buf,file_desc* new_fd);
 file_desc* circ_buf_pop(circ_buffer* circ_buf);
+
+int Workers;
+int countWorkers;
+int readWorkers;
+
+pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cvar;
 
 int main(int argc,char** argv){
     int queryPortNum;
@@ -110,7 +117,25 @@ int main(int argc,char** argv){
     circ_buf->head=circ_buf->tail=0;
     circ_buf->size=bufferSize;
 
+    int err;
+    pthread_cond_init (&cvar , NULL ) ; /* Initialize condition variable */
+    if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
+        perror2(" pthread_mutex_lock " , err ); 
+        exit(1); 
+    }
+    pthread_t* thread_Arr=malloc(numThreads*sizeof(pthread_t));
 
+    for(int i=0;i<numThreads;i++){
+        if ( err = pthread_create (thread_Arr+i , NULL , statistic_n_clients , ( void *) circ_buf ) ) {
+            /* Create a thread */
+            perror2 ( " pthread_create " , err ) ;
+            exit (1) ;
+        }
+    }
+    if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
+        perror2(" pthread_mutex_unlock " , err ); 
+        exit(1); 
+    }
 
     int sock;
     struct sockaddr_in server;
@@ -137,9 +162,20 @@ int main(int argc,char** argv){
 
     listen(sock,bufferSize);
 
+
+    Workers=-1;
+    countWorkers=-1;
+    readWorkers=0;
+    pthread_t thread;
+
     /*Accept*/
 
     while(1){
+        if(countWorkers==0){
+            printf("All the statistics have been received.\n");
+            pthread_join(thread,NULL);
+            break;
+        }
         mysock=accept(sock,(struct sockaddr*) 0,0);
         if(mysock==-1){
             perror("Accept failed");
@@ -152,13 +188,25 @@ int main(int argc,char** argv){
                 free(fd);
                 continue;
             }
-            pthread_t thread;
-            int err;
-            if(err = pthread_create (&thread, NULL,statistic_socket,(void*)circ_buf)){     /* Create a thread */
-                perror2 ( " pthread_create " , err ) ;
-                exit (1) ;
+            if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
+                perror2(" pthread_mutex_lock " , err ); 
+                exit(1); 
             }
+            pthread_cond_signal (&cvar) ;
+            if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
+                perror2(" pthread_mutex_unlock " , err ); 
+                exit(1); 
+            }
+            // int err;
+            // if(err = pthread_create (&thread, NULL,statistic_n_clients,(void*)circ_buf)){     /* Create a thread */
+            //     perror2 ( " pthread_create " , err ) ;
+            //     exit (1) ;
+            // }
 
+            while(readWorkers==0){
+                //wait for the number of workers to be received for the first time
+            }
+            countWorkers--;
         }
     }
 
@@ -168,21 +216,38 @@ int main(int argc,char** argv){
 }
 
 
-void* statistic_socket(void* buf){
+void* statistic_n_clients(void* buf){
+    
+    int err;
+    if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
+        perror2(" pthread_mutex_lock " , err ); 
+        exit(1); 
+    }
+    pthread_cond_wait(&cvar,&wait_mutex); /* Wait for signal */
     int rval;
     circ_buffer* circ_buf= (circ_buffer*)buf;
     int bufferlen;
     file_desc* mysock;
     mysock=circ_buf_pop(circ_buf);
-    printf("hey there %d\n",mysock->fd);
-    if(mysock->fd==0){
+    if ( err = pthread_mutex_unlock(&wait_mutex)) { /* Unlock mutex */
+        perror2 ( " pthread_mutex_unlock " , err );
+        exit (1);
+    }
+ 
+    if(mysock->type==0){
+        read(mysock->fd,&Workers,sizeof(int));
+            if(readWorkers==0){
+                countWorkers=Workers;
+                readWorkers++;
+            }
+            printf("workers: %d\n",Workers);
+            rval=read(mysock->fd,&bufferlen,sizeof(int));
         while(1){
-            rval=read(mysock->fd,&bufferlen,sizeof(int)); 
-            printf("%d\n",bufferlen);
             if(rval<0){
                 perror("Reading error");
             }else if(!rval){
                 printf("Message ended\n");
+                break;
             }else{
                 char* buf=malloc(bufferlen);
                 memset(buf,0,bufferlen);

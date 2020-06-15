@@ -106,4 +106,9 @@ typedef struct ageRanges{
     int index;
 }ageRanges;
 
+
+typedef struct ThreadList{
+    
+}
+
 #endif
