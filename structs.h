@@ -107,8 +107,4 @@ typedef struct ageRanges{
 }ageRanges;
 
 
-typedef struct ThreadList{
-    
-}
-
 #endif
