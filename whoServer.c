@@ -16,12 +16,18 @@ typedef struct file_desc{
     int type; //0 for stats, 1 for clients
 }file_desc;
 
+
 typedef struct circ_buffer{
     file_desc** fd_array;
     int head;
     int tail;
     int size;
 }circ_buffer;
+
+typedef struct arguments{
+    circ_buffer* circ_buf;
+    int servWait;
+}arguments;
 
 
 void* statistic_n_clients(void* arguments);
@@ -34,7 +40,9 @@ int readWorkers;
 
 pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t waitServ_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cvar;
+pthread_cond_t cvarServ;
 
 int main(int argc,char** argv){
     int queryPortNum;
@@ -118,18 +126,24 @@ int main(int argc,char** argv){
     circ_buf->head=circ_buf->tail=0;
     circ_buf->size=bufferSize;
 
+    arguments* args=malloc(sizeof(arguments));
+    args->circ_buf=circ_buf;
+    args->servWait=0;
+
     int err;
     pthread_cond_init (&cvar , NULL ) ; /* Initialize condition variable */
 
     pthread_t* thread_Arr=malloc(numThreads*sizeof(pthread_t));
 
     for(int i=0;i<numThreads;i++){
-        if ( err = pthread_create (thread_Arr+i , NULL , statistic_n_clients , ( void *) circ_buf ) ) {
+        if ( err = pthread_create (thread_Arr+i , NULL , statistic_n_clients , ( void *) args ) ) {
             /* Create a thread */
             perror2 ( " pthread_create " , err ) ;
             exit (1) ;
         }
     }
+
+    int threadCounter=numThreads;
 
     int sock;
     struct sockaddr_in server;
@@ -160,7 +174,7 @@ int main(int argc,char** argv){
     Workers=-1;
     countWorkers=-1;
     readWorkers=0;
-    pthread_t thread;
+
 
     /*Accept*/
 
@@ -182,6 +196,28 @@ int main(int argc,char** argv){
                 free(fd);
                 continue;
             }
+
+            if(threadCounter==0){
+                pthread_t thread;
+                args->servWait=1;
+                if(err = pthread_create (&thread, NULL,statistic_n_clients,(void*)args)){     /* Create a thread */
+                    perror2 ( " pthread_create " , err ) ;
+                    exit (1) ;
+                }
+                if ( err = pthread_mutex_lock (&waitServ_mutex)){ /* Lock mutex */
+                    perror2(" pthread_mutex_lock " , err ); 
+                    exit(1); 
+                }
+                pthread_cond_wait (&cvarServ,&waitServ_mutex) ;
+                args->servWait=0;
+                if ( err = pthread_mutex_unlock (&waitServ_mutex)){ /* Unlock mutex */
+                    perror2(" pthread_mutex_unlock " , err ); 
+                    exit(1); 
+                }
+            }else{
+                threadCounter--;
+            }
+
             if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
                 perror2(" pthread_mutex_lock " , err ); 
                 exit(1); 
@@ -191,11 +227,7 @@ int main(int argc,char** argv){
                 perror2(" pthread_mutex_unlock " , err ); 
                 exit(1); 
             }
-            // int err;
-            // if(err = pthread_create (&thread, NULL,statistic_n_clients,(void*)circ_buf)){     /* Create a thread */
-            //     perror2 ( " pthread_create " , err ) ;
-            //     exit (1) ;
-            // }
+
 
             while(readWorkers==0){
                 //wait for the number of workers to be received for the first time
@@ -210,29 +242,38 @@ int main(int argc,char** argv){
 }
 
 
-void* statistic_n_clients(void* buf){
+void* statistic_n_clients(void* argum){
     
     int err;
+    arguments* args=(arguments*)argum;
+    if(args->servWait==1){
+        if ( err = pthread_mutex_lock (&waitServ_mutex)){ /* Lock mutex */
+            perror2(" pthread_mutex_lock " , err ); 
+            exit(1); 
+        }
+        pthread_cond_signal(&cvarServ);
+        if ( err = pthread_mutex_unlock (&waitServ_mutex)){ /* Unlock mutex */
+            perror2(" pthread_mutex_lock " , err ); 
+            exit(1); 
+        }
+    }
+
     if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
         perror2(" pthread_mutex_lock " , err ); 
         exit(1); 
     }
     pthread_cond_wait(&cvar,&wait_mutex); /* Wait for signal */
-    if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
+    printf("\nI woke up\n");
+
+    circ_buffer* circ_buf= args->circ_buf;
+    file_desc* mysock;
+    mysock=circ_buf_pop(circ_buf);
+        if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
         perror2(" pthread_mutex_unlock " , err ); 
         exit(1); 
     }
-    printf("I woke up\n");
-    getchar();
-    int rval;
-    circ_buffer* circ_buf= (circ_buffer*)buf;
     int bufferlen;
-    file_desc* mysock;
-    mysock=circ_buf_pop(circ_buf);
-    // if ( err = pthread_mutex_unlock(&wait_mutex)) { /* Unlock mutex */
-    //     perror2 ( " pthread_mutex_unlock " , err );
-    //     exit (1);
-    // }
+    int rval;
  
     if(mysock->type==0){
         read(mysock->fd,&Workers,sizeof(int));
