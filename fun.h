@@ -10,4 +10,5 @@ void listCountries(HashTable* HT);
 void numPatient_Adm_Dis(HashTable* HT,char* disease,char* date1,char* date2,char* country,int option);
 void topk_AgeRanges(HashTable* HT,char* k,char* country,char* disease,char* date1,char* date2);
 void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* country,int option);
+countryList* serverListInsert(countryList* node,char* name);
 

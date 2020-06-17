@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -g
 Objects1 = master.o fun.o RBT.o HashTable.o
 Objects2 = fun.o RBT.o HashTable.o  worker.o
-Objects3 = whoServer.o
+Objects3 = whoServer.o 
 Objects4 = whoClient.o
 
 run : $(Objects1) $(Objects2) $(Objects3) $(Objects4)

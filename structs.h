@@ -107,4 +107,32 @@ typedef struct ageRanges{
 }ageRanges;
 
 
+typedef struct file_desc{
+    int fd;
+    int type; //0 for stats, 1 for clients
+}file_desc;
+
+
+typedef struct circ_buffer{
+    file_desc** fd_array;
+    int head;
+    int tail;
+    int size;
+}circ_buffer;
+
+typedef struct arguments{
+    circ_buffer* circ_buf;
+    //int servWait;
+}arguments;
+
+typedef struct countryList{
+    char* countryName;
+    struct countryList* next;
+}countryList;
+
+typedef struct workerInfo{
+    int port_num;
+    countryList* countries;
+}workerInfo;
+
 #endif

@@ -241,12 +241,50 @@ int main(int argc,char** argv){
         close(sock);
         exit(1);
     }
+
+    int workersock;
+    struct sockaddr_in workerserver;
+    int clientsock;
+
+    /*Creating a socket for the workers to listen to*/
+
+    workersock=socket(AF_INET,SOCK_STREAM,0);
+    if(workersock<0){
+        perror("Failed to create a socket");
+        exit(1);
+    }
+
+    workerserver.sin_family=AF_INET;
+    workerserver.sin_addr.s_addr=INADDR_ANY;
+    workerserver.sin_port=0;
+
+    socklen_t len=sizeof(workerserver);
+
+    /*Bind & Listen*/
+
+    if(bind(workersock,(struct sockaddr*) &workerserver,sizeof(workerserver))){
+        perror("Bind failed");
+        exit(1);
+    }
+
+    listen(sock,5);
+
+    if(getsockname(workersock,(struct sockaddr*)&workerserver,&len)==-1){
+        perror("Bind failed");
+        exit(1);
+    }
+    printf("\nI listen into port: %d\n",ntohs(workerserver.sin_port));
+
+    int port_num=ntohs(workerserver.sin_port);
+
+    
     int buff=buffersize;
     while(1){
-        if(write(sock,&numWorkers,sizeof(int))>0){             //attempt the connect
+        if(write(sock,&port_num,sizeof(int))>0){             //attempt the connect
             break;
         }
     }
+    write(sock,&numWorkers,sizeof(int));
     write(sock,&buff,sizeof(int));
 
     int countryHashtableNumOfEntries=10;
@@ -322,6 +360,9 @@ int main(int argc,char** argv){
             workerStats(statsHT,sock,buffersize);
             deleteHashTable(statsHT);  
         }
+        memset(buffer,0,buffersize);
+        strcpy(buffer,"new");
+        write(sock,buffer,buffersize);
         testList=testList->next;
         free(temp_dir);
         closedir(pDir);

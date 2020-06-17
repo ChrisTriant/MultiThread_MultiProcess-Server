@@ -6,44 +6,32 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <unistd.h>
+#include "structs.h"
+#include "fun.h"
 void perror2(char* s,int e){
     fprintf(stderr," %s : %s \n",s,strerror(e));
 }
 
 
-typedef struct file_desc{
-    int fd;
-    int type; //0 for stats, 1 for clients
-}file_desc;
-
-
-typedef struct circ_buffer{
-    file_desc** fd_array;
-    int head;
-    int tail;
-    int size;
-}circ_buffer;
-
-typedef struct arguments{
-    circ_buffer* circ_buf;
-    int servWait;
-}arguments;
-
-
 void* statistic_n_clients(void* arguments);
 int circ_buf_push(circ_buffer* circ_buf,file_desc* new_fd);
 file_desc* circ_buf_pop(circ_buffer* circ_buf);
+countryList* serverListInsert(countryList* node,char* name);
 
 int Workers;
 int countWorkers;
 int readWorkers;
 int availableThreads;
+int idx;
 
 pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t waitServ_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t work_mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t waitServ_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cvar;
-pthread_cond_t cvarServ;
+//pthread_cond_t cvarServ;
+
+workerInfo** worker_info;
 
 int main(int argc,char** argv){
     int queryPortNum;
@@ -129,7 +117,7 @@ int main(int argc,char** argv){
 
     arguments* args=malloc(sizeof(arguments));
     args->circ_buf=circ_buf;
-    args->servWait=0;
+    //args->servWait=0;
 
     availableThreads=0;
     int err;
@@ -145,7 +133,7 @@ int main(int argc,char** argv){
         }
     }
 
-    int threadCounter=numThreads;
+    //int threadCounter=numThreads;
 
 
     int sock;
@@ -240,8 +228,27 @@ int main(int argc,char** argv){
         }
     }
 
+    for(int i=0;i<Workers;i++){
+        countryList* temp=worker_info[i]->countries;
+        printf("\nPort number: %d\nCountries:\n",worker_info[i]->port_num);
+        while(temp!=NULL){
+            printf("%s\n",temp->countryName);
+            temp=temp->next;
+        }
+    }
+
     free(circ_buf->fd_array);
     free(circ_buf);
+    for(int i=0;i<Workers;i++){
+        countryList* temp=worker_info[i]->countries;
+        while(worker_info[i]->countries!=NULL){
+            temp=worker_info[i]->countries;
+            worker_info[i]->countries=worker_info[i]->countries->next;
+            free(temp->countryName);
+            free(temp);
+        }
+        free(worker_info[i]);
+    }
     
 }
 
@@ -265,7 +272,7 @@ void* statistic_n_clients(void* argum){
         circ_buffer* circ_buf= args->circ_buf;
         file_desc* mysock;
         mysock=circ_buf_pop(circ_buf);
-            if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
+        if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
             perror2(" pthread_mutex_unlock " , err ); 
             exit(1); 
         }
@@ -273,15 +280,33 @@ void* statistic_n_clients(void* argum){
 
         int bufferlen;
         int rval;
+        int port_num;
+        int index;
     
         if(mysock->type==0){
+            read(mysock->fd,&port_num,sizeof(int));
             read(mysock->fd,&Workers,sizeof(int));
+                if ( err = pthread_mutex_lock (&work_mutex)){ /* Lock mutex */
+                    perror2(" pthread_mutex_lock " , err ); 
+                    exit(1); 
+                }
                 if(readWorkers==0){
                     countWorkers=Workers;
+                    idx=Workers;
+                    worker_info=malloc(Workers*sizeof(workerInfo*));
                     readWorkers++;
                 }
-                printf("workers: %d\n",Workers);
+                index=Workers-idx;
+                idx--;
+                worker_info[index]=malloc(sizeof(workerInfo));
+                worker_info[index]->port_num=port_num;
+                if ( err = pthread_mutex_unlock (&work_mutex)){ /* Lock mutex */
+                    perror2(" pthread_mutex_unlock " , err ); 
+                    exit(1); 
+                }
+                
                 rval=read(mysock->fd,&bufferlen,sizeof(int));
+                int readCountry=0;
             while(1){
                 if(rval<0){
                     perror("Reading error");
@@ -292,6 +317,10 @@ void* statistic_n_clients(void* argum){
                     char* buf=malloc(bufferlen);
                     memset(buf,0,bufferlen);
                     read(mysock->fd,buf,bufferlen);
+                    if(strcmp(buf,"new")==0){
+                        readCountry=0;
+                        read(mysock->fd,buf,bufferlen);
+                    }
                     if(strcmp(buf,"done")==0){
                         printf("\n\n");
                         break;
@@ -304,6 +333,10 @@ void* statistic_n_clients(void* argum){
                     memset(buf,0,bufferlen);
                     read(mysock->fd,buf,bufferlen);
                     printf("\n%s\n",buf);
+                    if(readCountry==0){
+                        worker_info[index]->countries=serverListInsert(worker_info[index]->countries,buf);
+                        readCountry=1;
+                    }
                     memset(buf,0,bufferlen);
                     read(mysock->fd,buf,bufferlen);
                     int* agenums=malloc(4*sizeof(int));
@@ -359,4 +392,22 @@ file_desc* circ_buf_pop(circ_buffer* circ_buf){
     file_desc* data = circ_buf->fd_array[circ_buf->tail];  // Read data and then move
     circ_buf->tail = next;              // tail to next offset.
     return data;
+}
+
+countryList* serverListInsert(countryList* node,char* name){
+    char* new_name=malloc(strlen(name)+1);
+    strcpy(new_name,name);
+    countryList* new_data=malloc(sizeof(CountryData));
+    new_data->countryName=new_name;
+    new_data->next=NULL;
+    countryList* temp=node;
+    if(node==NULL){
+        node=new_data;
+    }else{
+        while(temp->next!=NULL){
+            temp=temp->next;
+        }
+        temp->next=new_data;
+    }
+    return node;
 }
