@@ -242,7 +242,11 @@ int main(int argc,char** argv){
         exit(1);
     }
     int buff=buffersize;
-    write(sock,&numWorkers,sizeof(int));
+    while(1){
+        if(write(sock,&numWorkers,sizeof(int))>0){             //attempt the connect
+            break;
+        }
+    }
     write(sock,&buff,sizeof(int));
 
     int countryHashtableNumOfEntries=10;

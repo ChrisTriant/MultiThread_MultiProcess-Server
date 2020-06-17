@@ -37,6 +37,7 @@ file_desc* circ_buf_pop(circ_buffer* circ_buf);
 int Workers;
 int countWorkers;
 int readWorkers;
+int availableThreads;
 
 pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -130,6 +131,7 @@ int main(int argc,char** argv){
     args->circ_buf=circ_buf;
     args->servWait=0;
 
+    availableThreads=0;
     int err;
     pthread_cond_init (&cvar , NULL ) ; /* Initialize condition variable */
 
@@ -144,6 +146,7 @@ int main(int argc,char** argv){
     }
 
     int threadCounter=numThreads;
+
 
     int sock;
     struct sockaddr_in server;
@@ -186,7 +189,7 @@ int main(int argc,char** argv){
         }
         mysock=accept(sock,(struct sockaddr*) 0,0);
         if(mysock==-1){
-            perror("Accept failed");
+            perror("\nACCEPT FAILED\n");
         }else{
             file_desc* fd=malloc(sizeof(file_desc));
             fd->fd=mysock;
@@ -196,27 +199,28 @@ int main(int argc,char** argv){
                 free(fd);
                 continue;
             }
+            while(availableThreads==0);
 
-            if(threadCounter==0){
-                pthread_t thread;
-                args->servWait=1;
-                if(err = pthread_create (&thread, NULL,statistic_n_clients,(void*)args)){     /* Create a thread */
-                    perror2 ( " pthread_create " , err ) ;
-                    exit (1) ;
-                }
-                if ( err = pthread_mutex_lock (&waitServ_mutex)){ /* Lock mutex */
-                    perror2(" pthread_mutex_lock " , err ); 
-                    exit(1); 
-                }
-                pthread_cond_wait (&cvarServ,&waitServ_mutex) ;
-                args->servWait=0;
-                if ( err = pthread_mutex_unlock (&waitServ_mutex)){ /* Unlock mutex */
-                    perror2(" pthread_mutex_unlock " , err ); 
-                    exit(1); 
-                }
-            }else{
-                threadCounter--;
-            }
+            // if(threadCounter==0){
+            //     pthread_t thread;
+            //     args->servWait=1;
+            //     if(err = pthread_create (&thread, NULL,statistic_n_clients,(void*)args)){     /* Create a thread */
+            //         perror2 ( " pthread_create " , err ) ;
+            //         exit (1) ;
+            //     }
+            //     if ( err = pthread_mutex_lock (&waitServ_mutex)){ /* Lock mutex */
+            //         perror2(" pthread_mutex_lock " , err ); 
+            //         exit(1); 
+            //     }
+            //     pthread_cond_wait (&cvarServ,&waitServ_mutex) ;
+            //     args->servWait=0;
+            //     if ( err = pthread_mutex_unlock (&waitServ_mutex)){ /* Unlock mutex */
+            //         perror2(" pthread_mutex_unlock " , err ); 
+            //         exit(1); 
+            //     }
+            // }else{
+            //     threadCounter--;
+            // }
 
             if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
                 perror2(" pthread_mutex_lock " , err ); 
@@ -243,87 +247,83 @@ int main(int argc,char** argv){
 
 
 void* statistic_n_clients(void* argum){
+    while(1){
+        int err;
+
+        arguments* args=(arguments*)argum;
+
+
+        if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
+            perror2(" pthread_mutex_lock " , err ); 
+            exit(1); 
+        }
+        availableThreads++;
+        pthread_cond_wait(&cvar,&wait_mutex); /* Wait for signal */
+        availableThreads--;
+        printf("\nI woke up\n");
+
+        circ_buffer* circ_buf= args->circ_buf;
+        file_desc* mysock;
+        mysock=circ_buf_pop(circ_buf);
+            if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
+            perror2(" pthread_mutex_unlock " , err ); 
+            exit(1); 
+        }
+
+
+        int bufferlen;
+        int rval;
     
-    int err;
-    arguments* args=(arguments*)argum;
-    if(args->servWait==1){
-        if ( err = pthread_mutex_lock (&waitServ_mutex)){ /* Lock mutex */
-            perror2(" pthread_mutex_lock " , err ); 
-            exit(1); 
-        }
-        pthread_cond_signal(&cvarServ);
-        if ( err = pthread_mutex_unlock (&waitServ_mutex)){ /* Unlock mutex */
-            perror2(" pthread_mutex_lock " , err ); 
-            exit(1); 
-        }
-    }
-
-    if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
-        perror2(" pthread_mutex_lock " , err ); 
-        exit(1); 
-    }
-    pthread_cond_wait(&cvar,&wait_mutex); /* Wait for signal */
-    printf("\nI woke up\n");
-
-    circ_buffer* circ_buf= args->circ_buf;
-    file_desc* mysock;
-    mysock=circ_buf_pop(circ_buf);
-        if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
-        perror2(" pthread_mutex_unlock " , err ); 
-        exit(1); 
-    }
-    int bufferlen;
-    int rval;
- 
-    if(mysock->type==0){
-        read(mysock->fd,&Workers,sizeof(int));
-            if(readWorkers==0){
-                countWorkers=Workers;
-                readWorkers++;
-            }
-            printf("workers: %d\n",Workers);
-            rval=read(mysock->fd,&bufferlen,sizeof(int));
-        while(1){
-            if(rval<0){
-                perror("Reading error");
-            }else if(!rval){
-                printf("Message ended\n");
-                break;
-            }else{
-                char* buf=malloc(bufferlen);
-                memset(buf,0,bufferlen);
-                read(mysock->fd,buf,bufferlen);
-                if(strcmp(buf,"done")==0){
-                    printf("\n\n");
+        if(mysock->type==0){
+            read(mysock->fd,&Workers,sizeof(int));
+                if(readWorkers==0){
+                    countWorkers=Workers;
+                    readWorkers++;
+                }
+                printf("workers: %d\n",Workers);
+                rval=read(mysock->fd,&bufferlen,sizeof(int));
+            while(1){
+                if(rval<0){
+                    perror("Reading error");
+                }else if(!rval){
+                    printf("Message ended\n");
                     break;
+                }else{
+                    char* buf=malloc(bufferlen);
+                    memset(buf,0,bufferlen);
+                    read(mysock->fd,buf,bufferlen);
+                    if(strcmp(buf,"done")==0){
+                        printf("\n\n");
+                        break;
+                    }
+                    if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                        perror2(" pthread_mutex_lock " , err ); 
+                        exit(1); 
+                    }
+                    printf("\n\n\n%s\n",buf);
+                    memset(buf,0,bufferlen);
+                    read(mysock->fd,buf,bufferlen);
+                    printf("\n%s\n",buf);
+                    memset(buf,0,bufferlen);
+                    read(mysock->fd,buf,bufferlen);
+                    int* agenums=malloc(4*sizeof(int));
+                    memcpy(agenums,buf,4*sizeof(int));
+                    printf("\nAge range 0-20 years: %d\n",agenums[0]);
+                    printf("\nAge range 21-40 years: %d\n",agenums[1]);
+                    printf("\nAge range 41-60 years: %d\n",agenums[2]);
+                    printf("\nAge range 61+ years: %d\n",agenums[3]);
+                    if ( err = pthread_mutex_unlock (&print_mutex)){ /* Lock mutex */
+                        perror2(" pthread_mutex_unlock " , err ); 
+                        exit(1); 
+                    }
+                    free(agenums);
+                    memset(buf,0,bufferlen);
                 }
-                if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
-                    perror2(" pthread_mutex_lock " , err ); 
-                    exit(1); 
-                }
-                printf("\n\n\n%s\n",buf);
-                memset(buf,0,bufferlen);
-                read(mysock->fd,buf,bufferlen);
-                printf("\n%s\n",buf);
-                memset(buf,0,bufferlen);
-                read(mysock->fd,buf,bufferlen);
-                int* agenums=malloc(4*sizeof(int));
-                memcpy(agenums,buf,4*sizeof(int));
-                printf("\nAge range 0-20 years: %d\n",agenums[0]);
-                printf("\nAge range 21-40 years: %d\n",agenums[1]);
-                printf("\nAge range 41-60 years: %d\n",agenums[2]);
-                printf("\nAge range 61+ years: %d\n",agenums[3]);
-                if ( err = pthread_mutex_unlock (&print_mutex)){ /* Lock mutex */
-                    perror2(" pthread_mutex_unlock " , err ); 
-                    exit(1); 
-                }
-                free(agenums);
-                memset(buf,0,bufferlen);
             }
         }
+        close(mysock->fd);
+        free(mysock);
     }
-    close(mysock->fd);
-    free(mysock);
     return NULL;    
 }
 
