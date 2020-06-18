@@ -181,12 +181,12 @@ int main(int argc,char** argv){
             file_desc* fd=malloc(sizeof(file_desc));
             fd->fd=mysock;
             fd->type=0;
+            while(availableThreads==0);
             if(circ_buf_push(circ_buf,fd)<0){
                 perror("Buffer is full\n");
                 free(fd);
                 continue;
-            }
-            while(availableThreads==0);
+            } 
 
             // if(threadCounter==0){
             //     pthread_t thread;
@@ -271,6 +271,9 @@ void* statistic_n_clients(void* argum){
         circ_buffer* circ_buf= args->circ_buf;
         file_desc* mysock;
         mysock=circ_buf_pop(circ_buf);
+        if(mysock==NULL){
+            printf("Buffer is empty\n");
+        }
         if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
             perror2(" pthread_mutex_unlock " , err ); 
             exit(1); 
