@@ -14,6 +14,7 @@ void perror2(char* s,int e){
 
 
 void* statistic_n_clients(void* arguments);
+circ_buffer* circ_buff_init(circ_buffer* cb, int size);
 int circ_buf_push(circ_buffer* circ_buf,file_desc* new_fd);
 file_desc* circ_buf_pop(circ_buffer* circ_buf);
 countryList* serverListInsert(countryList* node,char* name);
@@ -107,13 +108,11 @@ int main(int argc,char** argv){
         printf("Size of buffer was default set to 1.\n");
     }
 
-    circ_buffer* circ_buf=malloc(sizeof(circ_buffer));
-    circ_buf->fd_array=malloc(bufferSize*sizeof(int*));
+    circ_buffer* circ_buf=circ_buff_init(circ_buf,bufferSize);
     for(int i=0;i<bufferSize;i++){
         circ_buf->fd_array[i]=NULL;
     }
-    circ_buf->head=circ_buf->tail=0;
-    circ_buf->size=bufferSize;
+
 
     arguments* args=malloc(sizeof(arguments));
     args->circ_buf=circ_buf;
@@ -362,35 +361,38 @@ void* statistic_n_clients(void* argum){
 
 
 
+circ_buffer* circ_buff_init(circ_buffer* cb, int size){
+    cb=malloc(sizeof(circ_buffer));
+    cb->fd_array = malloc(size * sizeof(file_desc*));
+    cb->buffer_end = size;
+    cb->size = size;
+    cb->count = 0;
+    cb->head = 0;
+    cb->tail = 0;
+    return cb;
+}
+
+
 int circ_buf_push(circ_buffer* circ_buf,file_desc* new_fd){
-    int next;
-
-    next = circ_buf->head + 1;  // next is where head will point to after this write.
-    if (next >= circ_buf->size)
-        next = 0;
-
-    if (next == circ_buf->tail)  // if the head + 1 == tail, circular buffer is full
-        return -1;
-
-
-    circ_buf->fd_array[circ_buf->head] = new_fd;  // Load data and then move
-    circ_buf->head = next;             // head to next data offset.
-    return 0;  // return success to indicate successful push.
+    if(circ_buf->count == circ_buf->size)
+            return -1;
+        circ_buf->fd_array[circ_buf->head]=new_fd;
+        circ_buf->head ++;
+        if(circ_buf->head == circ_buf->buffer_end)
+            circ_buf->head = 0;
+        circ_buf->count++;
+        return 0;
 }
 
 
 file_desc* circ_buf_pop(circ_buffer* circ_buf){
-    int next;
-
-    if (circ_buf->head == circ_buf->tail)  // if the head == tail, we don't have any data
+    if(circ_buf->count == 0)
         return NULL;
-
-    next = circ_buf->tail + 1;  // next is where tail will point to after this read.
-    if(next >= circ_buf->size)
-        next = 0;
-
-    file_desc* data = circ_buf->fd_array[circ_buf->tail];  // Read data and then move
-    circ_buf->tail = next;              // tail to next offset.
+    file_desc* data=circ_buf->fd_array[circ_buf->tail];
+    circ_buf->tail++;
+    if(circ_buf->tail == circ_buf->buffer_end)
+        circ_buf->tail = 0;
+    circ_buf->count--;
     return data;
 }
 

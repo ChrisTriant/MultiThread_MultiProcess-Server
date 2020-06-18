@@ -9,7 +9,7 @@ run : $(Objects1) $(Objects2) $(Objects3) $(Objects4)
 	$(CC) $(CFLAGS) $(Objects1) -o master
 	$(CC) $(CFLAGS) $(Objects2) -o worker
 	$(CC) $(CFLAGS) $(Objects3) -o whoServer -lpthread
-	$(CC) $(CFLAGS) $(Objects3) -o whoClient -lpthread
+	$(CC) $(CFLAGS) $(Objects4) -o whoClient -lpthread
 	
 diseaseAggregator : $(Objects1)
 	$(CC) $(CFLAGS) master.c -o master.o -c

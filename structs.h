@@ -115,9 +115,11 @@ typedef struct file_desc{
 
 typedef struct circ_buffer{
     file_desc** fd_array;
-    int head;
+    int buffer_end; 
+    int size;  
+    int count;           
+    int head;       
     int tail;
-    int size;
 }circ_buffer;
 
 typedef struct arguments{

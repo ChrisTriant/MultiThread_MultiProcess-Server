@@ -267,7 +267,7 @@ int main(int argc,char** argv){
         exit(1);
     }
 
-    listen(sock,5);
+    listen(workersock,5);
 
     if(getsockname(workersock,(struct sockaddr*)&workerserver,&len)==-1){
         perror("Bind failed");
