@@ -4,11 +4,15 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
+#define SERVER_WRITEBUFFER_SIZE 150
 
 void perror2(char* s,int e){
     fprintf(stderr," %s : %s \n",s,strerror(e));
@@ -43,9 +47,11 @@ pthread_mutex_t circ_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_cond_t cvar;
 
+int servPort;
+char* servIP;
+
 int main(int argc,char** argv){
-    int servPort;
-    char* servIP;
+
     int numThreads;
     int bufferSize;
     FILE* queryFile;
@@ -133,12 +139,15 @@ int main(int argc,char** argv){
     exit_program=0;
     int threadsCreated=0;
 
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
     while(!feof(queryFile)){
         if(threads_ready==0){
             if(forbroadcast<numThreads){
                 char* l=fgets(line,sizeof(line),queryFile);
                 if(l==NULL){
-                    printf("bye\n");
                     break;
                 }
                 forbroadcast++;
@@ -146,7 +155,7 @@ int main(int argc,char** argv){
                 char*query=malloc(strlen(line)+1);
                 strcpy(query,line);
                 circ_buf_push(circ_buf,query);
-                if(err = pthread_create (&thread, NULL,query_fun,(void*)circ_buf)){     /* Create a thread */
+                if(err = pthread_create (&thread, &attr,query_fun,(void*)circ_buf)){     /* Create a thread */
                     perror2 ( " pthread_create " , err ) ;
                     exit (1) ;
                 }
@@ -174,34 +183,36 @@ int main(int argc,char** argv){
             }
         }
         while(threadsAvailabe!=threadsCreated);             //wait for all the threads to reach their wait state
-        usleep(1000);
+        usleep(10000);
         pthread_cond_broadcast(&cvar);
         while(threadsAvailabe!=threadsCreated);
-        usleep(100);
+        usleep(10000);
         //printf("\nBroadCasted\n");
     }
 
     if(circ_buf->count>0){              
         while(threadsAvailabe!=threadsCreated);             //if there are still lines in the buffer
-        usleep(100);
+        usleep(10000);
         pthread_cond_broadcast(&cvar);
         while(threadsAvailabe!=threadsCreated);
-        usleep(100);
+        usleep(10000);
     }
 
 
     exit_program=1;
     while(threadsAvailabe!=threadsCreated);
-    usleep(100);
+    usleep(10000);
     printf("Goodbye\n");
     pthread_cond_broadcast(&cvar);
-    usleep(100);
-    // pthread_cond_destroy(&cvar);
-    // pthread_mutex_destroy(&wait_mutex);
-    // pthread_mutex_destroy(&print_mutex);
+    usleep(1000);
+    pthread_cond_destroy(&cvar);
+    pthread_mutex_destroy(&wait_mutex);
+    pthread_mutex_destroy(&print_mutex);
+    pthread_attr_destroy(&attr);
     
     free(circ_buf->queryArray);
     free(circ_buf);
+    free(servIP);
 }
 
 
@@ -218,9 +229,47 @@ void* query_fun(void* args){
         }
         threadsAvailabe++;
         pthread_cond_wait(&cvar,&wait_mutex); /* Wait for signal */
+
         if(exit_program==1){
-            return NULL;
+            //pthread_detach(pthread_self());
+            pthread_exit(NULL);
         }
+
+        //connect to the server
+        int sock;
+        struct sockaddr_in server;
+        sock=socket(AF_INET,SOCK_STREAM,0);
+        if(sock<0){
+            perror("Failed to create a socket");
+            continue;
+        }
+
+        server.sin_family=AF_INET;
+        server.sin_addr.s_addr=INADDR_ANY;
+        server.sin_port=htons(servPort);
+
+        struct hostent* foundhost ;
+        struct in_addr myaddress ;
+
+        inet_aton ( servIP , &myaddress ) ;
+        foundhost = gethostbyaddr (( const char *) & myaddress , sizeof ( myaddress ) , AF_INET ) ;
+
+        if(foundhost==0){
+            perror("Hosting failed");
+            continue;
+        }
+            
+        memcpy(&server.sin_addr,foundhost->h_addr_list[0],foundhost->h_length);
+        server.sin_port=htons(servPort);
+        if(connect(sock,(struct sockaddr*)&server,sizeof(server))){
+            perror("Connection failed");
+            close(sock);
+            continue;
+        }
+        
+
+
+
         if ( err = pthread_mutex_lock (&circ_mutex)){ /* Lock mutex */
             perror2(" pthread_mutex_lock " , err ); 
             exit(1); 
@@ -241,6 +290,10 @@ void* query_fun(void* args){
         }
         if(query!=NULL){
             printf("\n%s\n",query);
+            write(sock,query,SERVER_WRITEBUFFER_SIZE);
+            int bufferlen;
+            //read(sock,&bufferlen,sizeof(int));
+            
             free(query);
         }else{
             printf("No more queries\n");

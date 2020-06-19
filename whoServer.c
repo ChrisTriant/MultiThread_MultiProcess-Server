@@ -4,10 +4,16 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <unistd.h>
 #include "structs.h"
-#include "fun.h"
+//#include "fun.h"
+
+#define CLIENT_READBUFFER_SIZE 150
+
+
 void perror2(char* s,int e){
     fprintf(stderr," %s : %s \n",s,strerror(e));
 }
@@ -18,6 +24,8 @@ circ_buffer* circ_buff_init(circ_buffer* cb, int size);
 int circ_buf_push(circ_buffer* circ_buf,file_desc* new_fd);
 file_desc* circ_buf_pop(circ_buffer* circ_buf);
 countryList* serverListInsert(countryList* node,char* name);
+int fd_socket_connect(int port,char* IP);
+int searchCountryList(workerInfo** worker_info,int Workers,char* country);
 
 int Workers;
 int countWorkers;
@@ -28,11 +36,14 @@ int idx;
 pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t work_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t cb_mutex = PTHREAD_MUTEX_INITIALIZER;
 //pthread_mutex_t waitServ_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cvar;
+pthread_cond_t cb_cvar;
 //pthread_cond_t cvarServ;
 
 workerInfo** worker_info;
+char* workerIP;
 
 int main(int argc,char** argv){
     int queryPortNum;
@@ -121,6 +132,8 @@ int main(int argc,char** argv){
     availableThreads=0;
     int err;
     pthread_cond_init (&cvar , NULL ) ; /* Initialize condition variable */
+    pthread_cond_init (&cb_cvar , NULL ) ; /* Initialize condition variable */
+
 
     pthread_t* thread_Arr=malloc(numThreads*sizeof(pthread_t));
 
@@ -158,13 +171,17 @@ int main(int argc,char** argv){
         exit(1);
     }
 
-    listen(sock,bufferSize);
+    listen(sock,5);
 
 
     Workers=-1;
     countWorkers=-1;
     readWorkers=0;
 
+;
+    int gotIP=0;
+    struct sockaddr_in acceptStrct;
+    socklen_t addr_size = sizeof(acceptStrct);
 
     /*Accept*/
 
@@ -174,7 +191,13 @@ int main(int argc,char** argv){
             printf("All the statistics have been received.\n");
             break;
         }
-        mysock=accept(sock,(struct sockaddr*) 0,0);
+        mysock=accept(sock,(struct sockaddr*)&acceptStrct,&addr_size);
+        if(!gotIP){
+            workerIP=malloc(strlen(inet_ntoa(acceptStrct.sin_addr))+1);
+            strcpy(workerIP,inet_ntoa(acceptStrct.sin_addr));
+            gotIP=1;
+            printf("Workers IP received: %s\n",workerIP);
+        }
         if(mysock==-1){
             perror("\nACCEPT FAILED\n");
         }else{
@@ -182,6 +205,17 @@ int main(int argc,char** argv){
             fd->fd=mysock;
             fd->type=0;
             while(availableThreads==0);
+            if(circ_buf->count==circ_buf->size){
+                if ( err = pthread_mutex_lock (&cb_mutex)){ /* Lock mutex */
+                    perror2(" pthread_mutex_lock " , err ); 
+                    exit(1); 
+                }
+                pthread_cond_wait (&cb_cvar,&cb_mutex) ;
+                if ( err = pthread_mutex_unlock (&cb_mutex)){ /* Lock mutex */
+                    perror2(" pthread_mutex_unlock " , err ); 
+                    exit(1); 
+                }
+            }
             if(circ_buf_push(circ_buf,fd)<0){
                 perror("Buffer is full\n");
                 free(fd);
@@ -236,6 +270,63 @@ int main(int argc,char** argv){
         }
     }
 
+    printf("\n\nWHOSERVER IS READY\n\n");
+
+    //listen to clients
+
+    int clientsock;
+    struct sockaddr_in clientserver;
+    int myclientsock;
+
+    /*Creating a socket for the workers*/
+
+    clientsock=socket(AF_INET,SOCK_STREAM,0);
+    if(clientsock<0){
+        perror("Failed to create a socket");
+        exit(1);
+    }
+
+    clientserver.sin_family=AF_INET;
+    clientserver.sin_addr.s_addr=INADDR_ANY;
+    clientserver.sin_port=htons(queryPortNum);
+
+    /*Bind & Listen*/
+
+    if(bind(clientsock,(struct sockaddr*) &clientserver,sizeof(clientserver))){
+        perror("Bind failed");
+        exit(1);
+    }
+
+    listen(clientsock,5);
+
+    while(1){
+        myclientsock=accept(sock,(struct sockaddr*)&acceptStrct,&addr_size);
+        if(myclientsock==-1){
+            perror("\nACCEPT FAILED\n");
+        }else{
+            file_desc* fd=malloc(sizeof(file_desc));
+            fd->fd=myclientsock;
+            fd->type=1;
+            while(availableThreads==0);
+            if(circ_buf_push(circ_buf,fd)<0){
+                perror("Buffer is full\n");
+                //free(fd);
+            } 
+            if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
+                perror2(" pthread_mutex_lock " , err ); 
+                exit(1); 
+            }
+            pthread_cond_signal (&cvar) ;
+            if ( err = pthread_mutex_unlock (&wait_mutex)){ /* Lock mutex */
+                perror2(" pthread_mutex_unlock " , err ); 
+                exit(1); 
+            }
+        }
+    }
+
+
+
+
     free(circ_buf->fd_array);
     free(circ_buf);
     for(int i=0;i<Workers;i++){
@@ -253,10 +344,10 @@ int main(int argc,char** argv){
 
 
 void* statistic_n_clients(void* argum){
+
+    arguments* args=(arguments*)argum;
     while(1){
         int err;
-
-        arguments* args=(arguments*)argum;
 
 
         if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
@@ -270,7 +361,17 @@ void* statistic_n_clients(void* argum){
 
         circ_buffer* circ_buf= args->circ_buf;
         file_desc* mysock;
+        if ( err = pthread_mutex_lock (&cb_mutex)){ /* Lock mutex */
+                    perror2(" pthread_mutex_lock " , err ); 
+                    exit(1); 
+        }
         mysock=circ_buf_pop(circ_buf);
+        pthread_cond_signal (&cb_cvar) ;
+        if ( err = pthread_mutex_unlock (&cb_mutex)){ /* Lock mutex */
+            perror2(" pthread_mutex_unlock " , err ); 
+            exit(1); 
+        }
+
         if(mysock==NULL){
             printf("Buffer is empty\n");
         }
@@ -355,6 +456,410 @@ void* statistic_n_clients(void* argum){
                     memset(buf,0,bufferlen);
                 }
             }
+        }else{
+            char* token;
+            char* buffer=malloc(bufferlen);
+            char* query=malloc(CLIENT_READBUFFER_SIZE);
+            read(mysock->fd,query,CLIENT_READBUFFER_SIZE);
+            printf("query: %s",query);
+
+            //token=strtok(query,"\n");
+            token=strtok(query," ");
+            memset(buffer,0,bufferlen);
+            strcpy(buffer,token);
+            if(strcmp(buffer,"/listCountries")==0){
+                //Total++;
+                for(int w=0;w<Workers;w++){
+                    int fd=fd_socket_connect(worker_info[w]->port_num,workerIP);
+                    write(fd,buffer,bufferlen);
+                    close(fd);
+                }
+                ////Successful++;
+            }else if(strcmp(buffer,"/searchPatientRecord")==0){
+                printf("Im in\n");
+                //Total++;
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    //Failed++;
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    continue;
+                }
+                int *fd_array=malloc(Workers*sizeof(int));
+                for(int w=0;w<Workers;w++){
+                    fd_array[w]=fd_socket_connect(worker_info[w]->port_num,workerIP);
+                    printf("fd: %d\n",fd_array[w]);
+                    write(fd_array[w],buffer,bufferlen);
+                }
+                memset(buffer,0,bufferlen);
+                strcpy(buffer,token);
+                for(int w=0;w<Workers;w++){
+                    write(fd_array[w],buffer,bufferlen);
+                }
+                memset(buffer,0,bufferlen);
+                int found=0;
+                for(int w=0;w<Workers;w++){
+                    int pid;
+                    read(fd_array[w],&pid,sizeof(int));
+                    read(fd_array[w],buffer,bufferlen);
+                    if(strcmp(buffer,"404")==0){
+                        printf("Record not found in worker with pid: %d\n",pid);
+                    }else{
+                        printf("Record found in worker with pid: %d\n",pid);
+                        ////Successful++;
+                        found++;
+                        printf("\n%s\n\n\n\n",buffer);
+                    }
+                }
+                if(!found){
+                    ////Failed++;
+                    printf("No patient with this ID was found\n");
+                }
+                free(fd_array);
+            }else if(strcmp(buffer,"/diseaseFrequency")==0){
+                ////Total++;
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    ////Failed++;
+                    continue;
+                }
+                char* disease = malloc(strlen(token)+1);
+                strcpy(disease,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    ////Failed++;
+                    continue;
+                }
+                char* date1=malloc(strlen(token)+1);
+                strcpy(date1,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    free(date1);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    ////Failed++;
+                    continue;
+                }
+                char* date2=malloc(strlen(token)+1);
+                strcpy(date2,token);
+                token=strtok(NULL," ");
+                char* country;
+                if(token==NULL){
+                    country=malloc(5);
+                    strcpy(country,"NULL");
+                    int* fd_array=malloc(Workers*sizeof(int));
+                    for(int w=0;w<Workers;w++){
+                        fd_array[w]=fd_socket_connect(worker_info[w]->port_num,workerIP);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,disease);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date1);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date2);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,country);
+                        write(fd_array[w],buffer,bufferlen);
+                        ////Successful++;
+                    }
+                    free(fd_array);
+                }else{
+                    country=malloc(strlen(token)+1);
+                    strcpy(country,token);
+                    int workerPort=searchCountryList(worker_info,Workers,country);
+                    if(workerPort==-1){
+                        printf("This country does not exist.\n");
+                        ////Failed++;
+                    }else{
+                        int fd=fd_socket_connect(workerPort,workerIP);
+                        strcpy(buffer,"/diseaseFrequency");
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,disease);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date1);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date2);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,country);
+                        write(fd,buffer,bufferlen);
+                        ////Successful++;
+                    }
+                }
+                free(disease);
+                free(date1);
+                free(date2);
+                free(country);
+
+            }else if(strcmp(buffer,"/numPatientAdmissions")==0){
+                //Total++;
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    ////Failed++;
+                    continue;
+                }
+                char* disease = malloc(strlen(token)+1);
+                strcpy(disease,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* date1=malloc(strlen(token)+1);
+                strcpy(date1,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    free(date1);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* date2=malloc(strlen(token)+1);
+                strcpy(date2,token);
+                token=strtok(NULL," ");
+                char* country;
+                if(token==NULL){
+                    country=malloc(5);
+                    strcpy(country,"NULL");
+                    int* fd_array=malloc(Workers*sizeof(int));
+                    for(int w=0;w<Workers;w++){
+                        fd_array[w]=fd_socket_connect(worker_info[w]->port_num,workerIP);
+                        strcpy(buffer,"/numPatientAdmissions");
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,disease);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date1);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date2);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,country);
+                        write(fd_array[w],buffer,bufferlen);
+                        //Successful++;
+                    }
+                    free(fd_array);
+                }else{
+                    country=malloc(strlen(token)+1);
+                    strcpy(country,token);
+                    int workerPort=searchCountryList(worker_info,Workers,country);
+                    if(workerPort==-1){
+                        printf("This country does not exist.\n");
+                        //Failed++;
+                    }else{
+                        int fd=fd_socket_connect(workerPort,workerIP);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,disease);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date1);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date2);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,country);
+                        write(fd,buffer,bufferlen);
+                        //Successful++;
+                    }
+                }
+                free(disease);
+                free(date1);
+                free(date2);
+                free(country);
+
+            }else if(strcmp(buffer,"/numPatientDischarges")==0){
+                //Total++;
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* disease = malloc(strlen(token)+1);
+                strcpy(disease,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* date1=malloc(strlen(token)+1);
+                strcpy(date1,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    free(date1);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* date2=malloc(strlen(token)+1);
+                strcpy(date2,token);
+                token=strtok(NULL," ");
+                char* country;
+                if(token==NULL){
+                    country=malloc(5);
+                    strcpy(country,"NULL");
+                    int* fd_array=malloc(Workers*sizeof(int));
+                    for(int w=0;w<Workers;w++){
+                        fd_array[w]=fd_socket_connect(worker_info[w]->port_num,workerIP);
+                        strcpy(buffer,"/numPatientDischarges");
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,disease);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date1);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date2);
+                        write(fd_array[w],buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,country);
+                        write(fd_array[w],buffer,bufferlen);
+                        //Successful++;
+                    }
+                    free(fd_array);
+                }else{
+                    country=malloc(strlen(token)+1);
+                    strcpy(country,token);
+                    int workerPort=searchCountryList(worker_info,Workers,country);
+                    if(workerPort==-1){
+                        printf("This country does not exist.\n");
+                        //Failed++;
+                    }else{
+                        int fd=fd_socket_connect(workerPort,workerIP);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,disease);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date1);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,date2);
+                        write(fd,buffer,bufferlen);
+                        memset(buffer,0,bufferlen);
+                        strcpy(buffer,country);
+                        write(fd,buffer,bufferlen);
+                        //Successful++;
+                    }
+                }
+                free(disease);
+                free(date1);
+                free(date2);
+                free(country);
+
+            }else if(strcmp(buffer,"/topk-AgeRanges")==0){
+                //Total++;
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* k = malloc(strlen(token)+1);
+                strcpy(k,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* country = malloc(strlen(token)+1);
+                strcpy(country,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* disease = malloc(strlen(token)+1);
+                strcpy(disease,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* date1=malloc(strlen(token)+1);
+                strcpy(date1,token);
+                token=strtok(NULL," ");
+                if(token==NULL){
+                    free(disease);
+                    free(date1);
+                    printf("Invalid input! Please provide the correct parameters\n");
+                    //Failed++;
+                    continue;
+                }
+                char* date2=malloc(strlen(token)+1);
+                strcpy(date2,token);
+                
+                int workerPort=searchCountryList(worker_info,Workers,country);
+                if(workerPort==-1){
+                    printf("This country does not exist.\n");
+                    //Failed++;
+                }else{
+                    int fd=fd_socket_connect(workerPort,workerIP);
+                    write(fd,buffer,bufferlen);
+                    memset(buffer,0,bufferlen);
+                    strcpy(buffer,k);
+                    write(fd,buffer,bufferlen);
+                    memset(buffer,0,bufferlen);
+                    strcpy(buffer,country);
+                    write(fd,buffer,bufferlen);
+                    memset(buffer,0,bufferlen);
+                    strcpy(buffer,disease);
+                    write(fd,buffer,bufferlen);
+                    memset(buffer,0,bufferlen);
+                    strcpy(buffer,date1);
+                    write(fd,buffer,bufferlen);
+                    memset(buffer,0,bufferlen);
+                    strcpy(buffer,date2);
+                    write(fd,buffer,bufferlen);
+                    //Successful++;
+                }
+                free(k);
+                free(country);
+                free(disease);
+                free(date1);
+                free(date2);
+                
+
+            }
+
+//####################################
+
+
+
+
+
+
+
+
+
+
+
+
+            free(query);
         }
         close(mysock->fd);
         free(mysock);
@@ -415,4 +920,55 @@ countryList* serverListInsert(countryList* node,char* name){
         temp->next=new_data;
     }
     return node;
+}
+
+int fd_socket_connect(int port,char* IP){
+    //connect to the server
+        int sock;
+        struct sockaddr_in server;
+        sock=socket(AF_INET,SOCK_STREAM,0);
+        if(sock<0){
+            perror("Failed to create a socket");
+            return -1;
+        }
+
+        server.sin_family=AF_INET;
+        server.sin_addr.s_addr=INADDR_ANY;
+        server.sin_port=htons(port);
+
+        struct hostent* foundhost ;
+        struct in_addr myaddress ;
+
+        inet_aton ( IP , &myaddress ) ;
+        foundhost = gethostbyaddr (( const char *) & myaddress , sizeof ( myaddress ) , AF_INET ) ;
+
+        if(foundhost==0){
+            perror("Hosting failed");
+            return -1;
+        }
+            
+        memcpy(&server.sin_addr,foundhost->h_addr_list[0],foundhost->h_length);
+        server.sin_port=htons(port);
+        if(connect(sock,(struct sockaddr*)&server,sizeof(server))){
+            perror("Connection failed");
+            close(sock);
+            return -1;
+        }
+        return sock;
+}
+
+
+
+int searchCountryList(workerInfo** worker_info,int Workers,char* country){
+
+    for(int i=0;i<Workers;i++){
+        countryList* temp=worker_info[i]->countries;
+        while(temp!=NULL){
+            if(strcmp(temp->countryName,country)==0){
+                return worker_info[i]->port_num;
+            }
+            temp=temp->next;
+        }
+    }
+    return -1;
 }

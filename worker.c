@@ -279,11 +279,8 @@ int main(int argc,char** argv){
 
     
     int buff=buffersize;
-    while(1){
-        if(write(sock,&port_num,sizeof(int))>0){             //attempt the connect
-            break;
-        }
-    }
+
+    write(sock,&port_num,sizeof(int));
     write(sock,&numWorkers,sizeof(int));
     write(sock,&buff,sizeof(int));
 
@@ -385,7 +382,13 @@ int main(int argc,char** argv){
 
     memset(buffer,0,buffersize);
     while(1){
-        read(read_fd,buffer,buffersize);
+        clientsock=accept(workersock,(struct sockaddr*)0,0);
+        if(clientsock==-1){
+            perror("\nACCEPT FAILED\n");
+            continue;
+        }
+        printf("w: %d , c: %d\n",workersock,clientsock);
+        read(clientsock,buffer,buffersize);
         if(strcmp(buffer,"/listCountries")==0){
             listCountries(CountryHT);
             Total++;
@@ -393,7 +396,7 @@ int main(int argc,char** argv){
         }else if(strcmp(buffer,"/searchPatientRecord")==0){
             Total++;
             memset(buffer,0,buffersize);
-            read(read_fd,buffer,buffersize);           
+            read(clientsock,buffer,buffersize);           
             node_ptr rec=searchID(ID_RBT->Root,buffer);
             if(rec!=sentinel){
                 memset(buffer,0,buffersize);
@@ -424,20 +427,22 @@ int main(int argc,char** argv){
                 strcpy(buffer,"404");
                 Failed++;
             }
-            write(write_fd,buffer,buffersize);
+            int pid=getpid();
+            write(clientsock,&pid,sizeof(int));
+            write(clientsock,buffer,buffersize);
 
         }else if(strcmp(buffer,"/diseaseFrequency")==0){
             char *disease,*date1,*date2,*country;
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             disease=malloc(strlen(buffer)+1);
             strcpy(disease,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date1=malloc(strlen(buffer)+1);
             strcpy(date1,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date2=malloc(strlen(buffer)+1);
             strcpy(date2,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
             if(strcmp(country,"NULL")!=0){
@@ -452,16 +457,16 @@ int main(int argc,char** argv){
 
         }else if(strcmp(buffer,"/numPatientAdmissions")==0){
             char *disease,*date1,*date2,*country;
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             disease=malloc(strlen(buffer)+1);
             strcpy(disease,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date1=malloc(strlen(buffer)+1);
             strcpy(date1,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date2=malloc(strlen(buffer)+1);
             strcpy(date2,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
             numPatient_Adm_Dis(CountryHT,disease,date1,date2,country,0);
@@ -472,16 +477,16 @@ int main(int argc,char** argv){
 
         }else if(strcmp(buffer,"/numPatientDischarges")==0){
             char *disease,*date1,*date2,*country;
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             disease=malloc(strlen(buffer)+1);
             strcpy(disease,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date1=malloc(strlen(buffer)+1);
             strcpy(date1,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date2=malloc(strlen(buffer)+1);
             strcpy(date2,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
             numPatient_Adm_Dis(CountryHT,disease,date1,date2,country,1);
@@ -492,19 +497,19 @@ int main(int argc,char** argv){
 
         }else if(strcmp(buffer,"/topk-AgeRanges")==0){
             char *k,*disease,*date1,*date2,*country;
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             k=malloc(strlen(buffer)+1);
             strcpy(k,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             disease=malloc(strlen(buffer)+1);
             strcpy(disease,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date1=malloc(strlen(buffer)+1);
             strcpy(date1,buffer);
-            read(read_fd,buffer,buffersize);
+            read(clientsock,buffer,buffersize);
             date2=malloc(strlen(buffer)+1);
             strcpy(date2,buffer);
             topk_AgeRanges(DiseaseHT,k,country,disease,date1,date2);
