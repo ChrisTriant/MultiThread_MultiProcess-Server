@@ -438,427 +438,83 @@ int main(int argc,char** argv){
     char* buffer=malloc(buffersize);
     bufferGlob=buffer;
 
-    printf(">");  
-    while(1){          
-        if(signaled==1){
-            clearerr(stdin);
-            signaled=0;
-        }             
-        getline(&line,&linelen,stdin);
+    int t=0;
+    sleep(1);
+    printf("\n\n\n");
+    
+    while(1){                                   //a completely useless but less boring thing for the master to do
+        printf("Time lapsed: %d s",t++);
+        sleep(1);
+        fflush(stdout);
+        printf("\r");
+    }
+
+        // if(signaled==1){
+        //     clearerr(stdin);
+        //     signaled=0;
+        // }    
+        // getline(&line,&linelen,stdin);
         
 
-        token=strtok(line,"\n");
-        token=strtok(line," ");
-        memset(buffer,0,buffersize);
-        strcpy(buffer,token);
-        if(strcmp(buffer,"/listCountries")==0){
-            Total++;
-            for(int w=0;w<numWorkers;w++){
-                write(fifoArray[w]->read_fd,buffer,buffersize);
-            }
-            Successful++;
-        }else if(strcmp(buffer,"/searchPatientRecord")==0){
-            Total++;
-            token=strtok(NULL," ");
-            if(token==NULL){
-                Failed++;
-                printf("Invalid input! Please provide the correct parameters\n");
-                continue;
-            }
-            for(int w=0;w<numWorkers;w++){
-                write(fifoArray[w]->read_fd,buffer,buffersize);
-            }
-            memset(buffer,0,buffersize);
-            strcpy(buffer,token);
-            for(int w=0;w<numWorkers;w++){
-                write(fifoArray[w]->read_fd,buffer,buffersize);
-            }
-            memset(buffer,0,buffersize);
-            int found=0;
-            for(int w=0;w<numWorkers;w++){
-                read(fifoArray[w]->write_fd,buffer,buffersize);
-                if(strcmp(buffer,"404")==0){
-                    printf("Record not found in worker with pid: %d\n",fifoArray[w]->pid);
-                }else{
-                    printf("Record found in worker with pid: %d\n",fifoArray[w]->pid);
-                    Successful++;
-                    found++;
-                    printf("\n%s\n\n\n\n",buffer);
-                }
-            }
-            if(!found){
-                Failed++;
-                printf("No patient with this ID was found\n");
-            }
-            
-        }else if(strcmp(buffer,"/diseaseFrequency")==0){
-            Total++;
-            token=strtok(NULL," ");
-            if(token==NULL){
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* disease = malloc(strlen(token)+1);
-            strcpy(disease,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date1=malloc(strlen(token)+1);
-            strcpy(date1,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                free(date1);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date2=malloc(strlen(token)+1);
-            strcpy(date2,token);
-            token=strtok(NULL," ");
-            char* country;
-            if(token==NULL){
-                country=malloc(5);
-                strcpy(country,"NULL");
-                for(int w=0;w<numWorkers;w++){
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,disease);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date1);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date2);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,country);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    Successful++;
-                }
-            }else{
-                country=malloc(strlen(token)+1);
-                strcpy(country,token);
-                int worker=searchCountryArray(countryArray,numWorkers,country);
-                if(worker==-1){
-                    printf("This country does not exist.\n");
-                    Failed++;
-                }else{
-                    strcpy(buffer,"/diseaseFrequency");
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,disease);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date1);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date2);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,country);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    Successful++;
-                }
-            }
-            free(disease);
-            free(date1);
-            free(date2);
-            free(country);
+        // token=strtok(line,"\n");
+        // token=strtok(line," ");
+        // memset(buffer,0,buffersize);
+        // strcpy(buffer,token);
 
-        }else if(strcmp(buffer,"/numPatientAdmissions")==0){
-            Total++;
-            token=strtok(NULL," ");
-            if(token==NULL){
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* disease = malloc(strlen(token)+1);
-            strcpy(disease,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date1=malloc(strlen(token)+1);
-            strcpy(date1,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                free(date1);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date2=malloc(strlen(token)+1);
-            strcpy(date2,token);
-            token=strtok(NULL," ");
-            char* country;
-            if(token==NULL){
-                country=malloc(5);
-                strcpy(country,"NULL");
-                for(int w=0;w<numWorkers;w++){
-                    strcpy(buffer,"/numPatientAdmissions");
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,disease);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date1);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date2);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,country);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    Successful++;
-                }
-            }else{
-                country=malloc(strlen(token)+1);
-                strcpy(country,token);
-                int worker=searchCountryArray(countryArray,numWorkers,country);
-                if(worker==-1){
-                    printf("This country does not exist.\n");
-                    Failed++;
-                }else{
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,disease);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date1);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date2);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,country);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    Successful++;
-                }
-            }
-            free(disease);
-            free(date1);
-            free(date2);
-            free(country);
-
-        }else if(strcmp(buffer,"/numPatientDischarges")==0){
-            Total++;
-            token=strtok(NULL," ");
-            if(token==NULL){
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* disease = malloc(strlen(token)+1);
-            strcpy(disease,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date1=malloc(strlen(token)+1);
-            strcpy(date1,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                free(date1);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date2=malloc(strlen(token)+1);
-            strcpy(date2,token);
-            token=strtok(NULL," ");
-            char* country;
-            if(token==NULL){
-                country=malloc(5);
-                strcpy(country,"NULL");
-                for(int w=0;w<numWorkers;w++){
-                    strcpy(buffer,"/numPatientDischarges");
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,disease);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date1);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date2);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,country);
-                    write(fifoArray[w]->read_fd,buffer,buffersize);
-                    Successful++;
-                }
-            }else{
-                country=malloc(strlen(token)+1);
-                strcpy(country,token);
-                int worker=searchCountryArray(countryArray,numWorkers,country);
-                if(worker==-1){
-                    printf("This country does not exist.\n");
-                    Failed++;
-                }else{
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,disease);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date1);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,date2);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    memset(buffer,0,buffersize);
-                    strcpy(buffer,country);
-                    write(fifoArray[worker]->read_fd,buffer,buffersize);
-                    Successful++;
-                }
-            }
-            free(disease);
-            free(date1);
-            free(date2);
-            free(country);
-
-        }else if(strcmp(buffer,"/topk-AgeRanges")==0){
-            Total++;
-            token=strtok(NULL," ");
-            if(token==NULL){
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* k = malloc(strlen(token)+1);
-            strcpy(k,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* country = malloc(strlen(token)+1);
-            strcpy(country,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* disease = malloc(strlen(token)+1);
-            strcpy(disease,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date1=malloc(strlen(token)+1);
-            strcpy(date1,token);
-            token=strtok(NULL," ");
-            if(token==NULL){
-                free(disease);
-                free(date1);
-                printf("Invalid input! Please provide the correct parameters\n");
-                Failed++;
-                continue;
-            }
-            char* date2=malloc(strlen(token)+1);
-            strcpy(date2,token);
-            
-            int worker=searchCountryArray(countryArray,numWorkers,country);
-            if(worker==-1){
-                printf("This country does not exist.\n");
-                Failed++;
-            }else{
-                write(fifoArray[worker]->read_fd,buffer,buffersize);
-                memset(buffer,0,buffersize);
-                strcpy(buffer,k);
-                write(fifoArray[worker]->read_fd,buffer,buffersize);
-                memset(buffer,0,buffersize);
-                strcpy(buffer,country);
-                write(fifoArray[worker]->read_fd,buffer,buffersize);
-                memset(buffer,0,buffersize);
-                strcpy(buffer,disease);
-                write(fifoArray[worker]->read_fd,buffer,buffersize);
-                memset(buffer,0,buffersize);
-                strcpy(buffer,date1);
-                write(fifoArray[worker]->read_fd,buffer,buffersize);
-                memset(buffer,0,buffersize);
-                strcpy(buffer,date2);
-                write(fifoArray[worker]->read_fd,buffer,buffersize);
-                Successful++;
-            }
-            free(k);
-            free(country);
-            free(disease);
-            free(date1);
-            free(date2);
             
 
-        }else if(strcmp(buffer,"/exit")==0){
-                exiting=1;
-                for(int w=0;w<numWorkers;w++){
-                    write(fifoArray[w]->read_fd,buffer,buffersize);    //comment these lines if you dont want the workers to free their memory before SIGKILL
-                    memset(buffer,0,buffersize);                       //
-                    read(fifoArray[w]->write_fd,buffer,5);             //
-                    if(strcmp(buffer,"exit")==0){                      //
-                        kill(fifoArray[w]->pid,SIGKILL);
-                    }                                                  //
-                    strcpy(buffer,"/exit");
-                }
-                closedir(pDir);
-                free(input_dir);
-                int pid=getpid();
-                char* spid=malloc(6);
-                sprintf(spid,"%d",pid);
-                char* log_file=malloc(sizeof("log_file")+6);
-                strcpy(log_file,"log_file");
-                strcat(log_file,spid);
-                FILE* log=fopen(log_file,"w");
-                for(int w=0;w<numWorkers;w++){
-                    close(fifoArray[w]->read_fd);
-                    close(fifoArray[w]->write_fd);
+        // if(strcmp(buffer,"/exit")==0){
+        //         exiting=1;
+        //         for(int w=0;w<numWorkers;w++){
+        //             write(fifoArray[w]->read_fd,buffer,buffersize);    //comment these lines if you dont want the workers to free their memory before SIGKILL
+        //             memset(buffer,0,buffersize);                       //
+        //             read(fifoArray[w]->write_fd,buffer,5);             //
+        //             if(strcmp(buffer,"exit")==0){                      //
+        //                 kill(fifoArray[w]->pid,SIGKILL);
+        //             }                                                  //
+        //             strcpy(buffer,"/exit");
+        //         }
+        //         closedir(pDir);
+        //         free(input_dir);
+        //         int pid=getpid();
+        //         char* spid=malloc(6);
+        //         sprintf(spid,"%d",pid);
+        //         char* log_file=malloc(sizeof("log_file")+6);
+        //         strcpy(log_file,"log_file");
+        //         strcat(log_file,spid);
+        //         FILE* log=fopen(log_file,"w");
+        //         for(int w=0;w<numWorkers;w++){
+        //             close(fifoArray[w]->read_fd);
+        //             close(fifoArray[w]->write_fd);
 
-                    while(countryArray[w]!=NULL){
-                        CountryData* temp=countryArray[w];
-                        countryArray[w]=countryArray[w]->next;
-                        fprintf(log,"%s\n",temp->name);
-                        free(temp->name);
-                        free(temp);
-                    }
-                    remove(fifoArray[w]->readfifo);
-                    remove(fifoArray[w]->writefifo);
-                    free(fifoArray[w]->readfifo);
-                    free(fifoArray[w]->writefifo);
-                    free(fifoArray[w]);
-                }
-                fprintf(log,"TOTAL:%d\nSUCCESSFUL:%d\nFAILED:%d\n",Total,Successful,Failed);
-                free(spid);
-                free(log_file);
-                free(line);
-                free(buffer);
-                free(cnumArr);
-                free(countryArray);
-                free(fifoArray);
-                fclose(log);
-                free(sentinel);
-                exit(0); 
-        }
-        sleep(1);
-        printf(">");  
-    }
+        //             while(countryArray[w]!=NULL){
+        //                 CountryData* temp=countryArray[w];
+        //                 countryArray[w]=countryArray[w]->next;
+        //                 fprintf(log,"%s\n",temp->name);
+        //                 free(temp->name);
+        //                 free(temp);
+        //             }
+        //             remove(fifoArray[w]->readfifo);
+        //             remove(fifoArray[w]->writefifo);
+        //             free(fifoArray[w]->readfifo);
+        //             free(fifoArray[w]->writefifo);
+        //             free(fifoArray[w]);
+        //         }
+        //         fprintf(log,"TOTAL:%d\nSUCCESSFUL:%d\nFAILED:%d\n",Total,Successful,Failed);
+        //         free(spid);
+        //         free(log_file);
+        //         free(line);
+        //         free(buffer);
+        //         free(cnumArr);
+        //         free(countryArray);
+        //         free(fifoArray);
+        //         fclose(log);
+        //         free(sentinel);
+        //         exit(0); 
+        // }
+        // sleep(1);
+        // printf(">");  
+    //}
 
 }
 

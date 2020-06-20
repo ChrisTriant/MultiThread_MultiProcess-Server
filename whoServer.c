@@ -32,6 +32,7 @@ int countWorkers;
 int readWorkers;
 int availableThreads;
 int idx;
+int bufferlen;
 
 pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -185,6 +186,8 @@ int main(int argc,char** argv){
 
     /*Accept*/
 
+    printf("\n\nWaiting for the master to start...\n\n");
+
     while(1){
         if(countWorkers==0){
             sleep(1);
@@ -222,26 +225,6 @@ int main(int argc,char** argv){
                 continue;
             } 
 
-            // if(threadCounter==0){
-            //     pthread_t thread;
-            //     args->servWait=1;
-            //     if(err = pthread_create (&thread, NULL,statistic_n_clients,(void*)args)){     /* Create a thread */
-            //         perror2 ( " pthread_create " , err ) ;
-            //         exit (1) ;
-            //     }
-            //     if ( err = pthread_mutex_lock (&waitServ_mutex)){ /* Lock mutex */
-            //         perror2(" pthread_mutex_lock " , err ); 
-            //         exit(1); 
-            //     }
-            //     pthread_cond_wait (&cvarServ,&waitServ_mutex) ;
-            //     args->servWait=0;
-            //     if ( err = pthread_mutex_unlock (&waitServ_mutex)){ /* Unlock mutex */
-            //         perror2(" pthread_mutex_unlock " , err ); 
-            //         exit(1); 
-            //     }
-            // }else{
-            //     threadCounter--;
-            // }
 
             if ( err = pthread_mutex_lock (&wait_mutex)){ /* Lock mutex */
                 perror2(" pthread_mutex_lock " , err ); 
@@ -308,6 +291,7 @@ int main(int argc,char** argv){
             fd->fd=myclientsock;
             fd->type=1;
             while(availableThreads==0);
+            
             if(circ_buf_push(circ_buf,fd)<0){
                 perror("Buffer is full\n");
                 //free(fd);
@@ -339,6 +323,7 @@ int main(int argc,char** argv){
         }
         free(worker_info[i]);
     }
+    free(worker_info);
     
 }
 
@@ -365,6 +350,7 @@ void* statistic_n_clients(void* argum){
                     perror2(" pthread_mutex_lock " , err ); 
                     exit(1); 
         }
+        usleep(100);
         mysock=circ_buf_pop(circ_buf);
         pthread_cond_signal (&cb_cvar) ;
         if ( err = pthread_mutex_unlock (&cb_mutex)){ /* Lock mutex */
@@ -381,7 +367,6 @@ void* statistic_n_clients(void* argum){
         }
 
 
-        int bufferlen;
         int rval;
         int port_num;
         int index;
@@ -395,15 +380,19 @@ void* statistic_n_clients(void* argum){
                 }
                 if(readWorkers==0){
                     countWorkers=Workers;
-                    idx=Workers;
+                    idx=0;
                     worker_info=malloc(Workers*sizeof(workerInfo*));
+                    for(int w=0;w<Workers;w++){
+                        worker_info[w]=malloc(sizeof(workerInfo));
+                        worker_info[w]->countries=NULL;
+                    }
                     readWorkers++;
                 }
-                index=Workers-idx;
-                idx--;
-                worker_info[index]=malloc(sizeof(workerInfo));
+                index=idx;
+                idx++;
                 worker_info[index]->port_num=port_num;
-                if ( err = pthread_mutex_unlock (&work_mutex)){ /* Lock mutex */
+                
+                if ( err = pthread_mutex_unlock (&work_mutex)){ /* Unlock mutex */
                     perror2(" pthread_mutex_unlock " , err ); 
                     exit(1); 
                 }
@@ -437,7 +426,9 @@ void* statistic_n_clients(void* argum){
                     read(mysock->fd,buf,bufferlen);
                     printf("\n%s\n",buf);
                     if(readCountry==0){
+                        pthread_mutex_lock (&work_mutex);
                         worker_info[index]->countries=serverListInsert(worker_info[index]->countries,buf);
+                        pthread_mutex_unlock (&work_mutex);
                         readCountry=1;
                     }
                     memset(buf,0,bufferlen);
@@ -461,10 +452,11 @@ void* statistic_n_clients(void* argum){
             char* buffer=malloc(bufferlen);
             char* query=malloc(CLIENT_READBUFFER_SIZE);
             read(mysock->fd,query,CLIENT_READBUFFER_SIZE);
-            printf("query: %s",query);
-
-            //token=strtok(query,"\n");
-            token=strtok(query," ");
+            write(mysock->fd,&bufferlen,sizeof(int));
+            char* temp=malloc(CLIENT_READBUFFER_SIZE);
+            strcpy(temp,query);
+            token=strtok(temp,"\n");
+            token=strtok(temp," ");
             memset(buffer,0,bufferlen);
             strcpy(buffer,token);
             if(strcmp(buffer,"/listCountries")==0){
@@ -476,7 +468,6 @@ void* statistic_n_clients(void* argum){
                 }
                 ////Successful++;
             }else if(strcmp(buffer,"/searchPatientRecord")==0){
-                printf("Im in\n");
                 //Total++;
                 token=strtok(NULL," ");
                 if(token==NULL){
@@ -487,7 +478,6 @@ void* statistic_n_clients(void* argum){
                 int *fd_array=malloc(Workers*sizeof(int));
                 for(int w=0;w<Workers;w++){
                     fd_array[w]=fd_socket_connect(worker_info[w]->port_num,workerIP);
-                    printf("fd: %d\n",fd_array[w]);
                     write(fd_array[w],buffer,bufferlen);
                 }
                 memset(buffer,0,bufferlen);
@@ -497,23 +487,36 @@ void* statistic_n_clients(void* argum){
                 }
                 memset(buffer,0,bufferlen);
                 int found=0;
+                //printf("query: %s\n",query);
+                char* clientbuf=malloc(bufferlen);
+                memset(clientbuf,0,bufferlen);
                 for(int w=0;w<Workers;w++){
                     int pid;
                     read(fd_array[w],&pid,sizeof(int));
                     read(fd_array[w],buffer,bufferlen);
                     if(strcmp(buffer,"404")==0){
-                        printf("Record not found in worker with pid: %d\n",pid);
+                        sprintf(clientbuf,"\nRecord not found in worker with pid: %d\n",pid);
+                        write(mysock->fd,clientbuf,bufferlen);
                     }else{
-                        printf("Record found in worker with pid: %d\n",pid);
+                        sprintf(clientbuf,"\nRecord found in worker with pid: %d\n",pid);
+                        write(mysock->fd,clientbuf,bufferlen);
                         ////Successful++;
                         found++;
-                        printf("\n%s\n\n\n\n",buffer);
+                        //printf("\n%s\n\n",buffer);
+                        write(mysock->fd,buffer,bufferlen);
                     }
+                    memset(clientbuf,0,bufferlen);
                 }
                 if(!found){
                     ////Failed++;
-                    printf("No patient with this ID was found\n");
+                    sprintf(clientbuf,"No patient with this ID was found\n");
+                    write(mysock->fd,clientbuf,bufferlen);
                 }
+                write(mysock->fd,"end_of_message",bufferlen);
+                for(int i=0;i<Workers;i++){
+                    close(fd_array[i]);
+                }
+                free(clientbuf);
                 free(fd_array);
             }else if(strcmp(buffer,"/diseaseFrequency")==0){
                 ////Total++;
@@ -567,6 +570,25 @@ void* statistic_n_clients(void* argum){
                         write(fd_array[w],buffer,bufferlen);
                         ////Successful++;
                     }
+                    if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                        perror2(" pthread_mutex_lock " , err ); 
+                        exit(1); 
+                    }
+                    printf("query: %s\n",query);
+                    for(int w=0;w<Workers;w++){
+                        while(1){
+                            read(fd_array[w],buffer,bufferlen);
+                            if(strcmp(buffer,"end_of_message")==0){
+                                break;
+                            }
+                            printf("%s\n",buffer);
+                        }
+                        close(fd_array[w]);
+                    }
+                    if ( err = pthread_mutex_unlock (&print_mutex)){ /* Unlock mutex */
+                        perror2(" pthread_mutex_unlock " , err ); 
+                        exit(1); 
+                    }
                     free(fd_array);
                 }else{
                     country=malloc(strlen(token)+1);
@@ -592,6 +614,23 @@ void* statistic_n_clients(void* argum){
                         strcpy(buffer,country);
                         write(fd,buffer,bufferlen);
                         ////Successful++;
+                        if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                            perror2(" pthread_mutex_lock " , err ); 
+                            exit(1); 
+                        }
+                        printf("query: %s\n",query);
+                        while(1){
+                            read(fd,buffer,bufferlen);
+                            if(strcmp(buffer,"end_of_message")==0){
+                                break;
+                            }
+                            printf("%s\n",buffer);
+                        }
+                        if ( err = pthread_mutex_unlock (&print_mutex)){ /* Lock mutex */
+                            perror2(" pthread_mutex_unlock " , err ); 
+                            exit(1); 
+                        }
+                        close(fd);
                     }
                 }
                 free(disease);
@@ -652,6 +691,25 @@ void* statistic_n_clients(void* argum){
                         write(fd_array[w],buffer,bufferlen);
                         //Successful++;
                     }
+                    if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                        perror2(" pthread_mutex_lock " , err ); 
+                        exit(1); 
+                    }
+                    printf("query: %s\n",query);
+                    for(int i=0;i<Workers;i++){
+                        while(1){
+                            read(fd_array[i],buffer,bufferlen);
+                            if(strcmp(buffer,"end_of_message")==0){
+                                break;
+                            }
+                            printf("%s\n",buffer);
+                        }
+                        close(fd_array[i]);
+                    }
+                    if ( err = pthread_mutex_unlock (&print_mutex)){ /* Unlock mutex */
+                        perror2(" pthread_mutex_unlock " , err ); 
+                        exit(1); 
+                    }
                     free(fd_array);
                 }else{
                     country=malloc(strlen(token)+1);
@@ -676,6 +734,23 @@ void* statistic_n_clients(void* argum){
                         strcpy(buffer,country);
                         write(fd,buffer,bufferlen);
                         //Successful++;
+                        if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                            perror2(" pthread_mutex_lock " , err ); 
+                            exit(1); 
+                        }
+                        printf("query: %s\n",query);
+                        while(1){
+                            read(fd,buffer,bufferlen);
+                            if(strcmp(buffer,"end_of_message")==0){
+                                break;
+                            }
+                            printf("%s\n",buffer);
+                        }
+                        if ( err = pthread_mutex_unlock (&print_mutex)){ /* Unlock mutex */
+                            perror2(" pthread_mutex_unlock " , err ); 
+                            exit(1); 
+                        }
+                        close(fd);
                     }
                 }
                 free(disease);
@@ -736,6 +811,25 @@ void* statistic_n_clients(void* argum){
                         write(fd_array[w],buffer,bufferlen);
                         //Successful++;
                     }
+                    if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                        perror2(" pthread_mutex_lock " , err ); 
+                        exit(1); 
+                    }
+                    printf("query: %s\n",query);
+                    for(int w=0;w<Workers;w++){
+                        while(1){
+                            read(fd_array[w],buffer,bufferlen);
+                            if(strcmp(buffer,"end_of_message")==0){
+                                break;
+                            }
+                            printf("%s\n",buffer);
+                        }
+                        close(fd_array[w]);
+                    }
+                    if ( err = pthread_mutex_unlock (&print_mutex)){ /* Unlock mutex */
+                        perror2(" pthread_mutex_unlock " , err ); 
+                        exit(1); 
+                    }
                     free(fd_array);
                 }else{
                     country=malloc(strlen(token)+1);
@@ -760,6 +854,23 @@ void* statistic_n_clients(void* argum){
                         strcpy(buffer,country);
                         write(fd,buffer,bufferlen);
                         //Successful++;
+                        if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                            perror2(" pthread_mutex_lock " , err ); 
+                            exit(1); 
+                        }
+                        printf("query: %s\n",query);
+                        while(1){
+                            read(fd,buffer,bufferlen);
+                            if(strcmp(buffer,"end_of_message")==0){
+                                break;
+                            }
+                            printf("%s\n",buffer);
+                        }
+                        if ( err = pthread_mutex_unlock (&print_mutex)){ /* Unlock mutex */
+                            perror2(" pthread_mutex_unlock " , err ); 
+                            exit(1); 
+                        }
+                        close(fd);
                     }
                 }
                 free(disease);
@@ -836,6 +947,23 @@ void* statistic_n_clients(void* argum){
                     strcpy(buffer,date2);
                     write(fd,buffer,bufferlen);
                     //Successful++;
+                    if ( err = pthread_mutex_lock (&print_mutex)){ /* Lock mutex */
+                        perror2(" pthread_mutex_lock " , err ); 
+                        exit(1); 
+                    }
+                    printf("query: %s\n",query);
+                    while(1){
+                        read(fd,buffer,bufferlen);
+                        if(strcmp(buffer,"end_of_message")==0){
+                            break;
+                        }
+                        printf("%s\n",buffer);
+                    }
+                    if ( err = pthread_mutex_unlock (&print_mutex)){ /* Unlock mutex */
+                        perror2(" pthread_mutex_unlock " , err ); 
+                        exit(1); 
+                    }
+                    close(fd);
                 }
                 free(k);
                 free(country);
@@ -848,18 +976,8 @@ void* statistic_n_clients(void* argum){
 
 //####################################
 
-
-
-
-
-
-
-
-
-
-
-
             free(query);
+            free(temp);
         }
         close(mysock->fd);
         free(mysock);
@@ -949,11 +1067,11 @@ int fd_socket_connect(int port,char* IP){
             
         memcpy(&server.sin_addr,foundhost->h_addr_list[0],foundhost->h_length);
         server.sin_port=htons(port);
-        if(connect(sock,(struct sockaddr*)&server,sizeof(server))){
+        while(connect(sock,(struct sockaddr*)&server,sizeof(server))<0){
             perror("Connection failed");
-            close(sock);
-            return -1;
+            usleep(10000);
         }
+        
         return sock;
 }
 

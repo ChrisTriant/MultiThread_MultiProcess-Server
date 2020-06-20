@@ -19,6 +19,7 @@ void perror2(char* s,int e){
 }
 
 void* query_fun(void* arguments);
+int server_connect();
 
 
 typedef struct circ_line_buffer{
@@ -46,6 +47,7 @@ pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t circ_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_cond_t cvar;
+
 
 int servPort;
 char* servIP;
@@ -147,7 +149,7 @@ int main(int argc,char** argv){
         if(threads_ready==0){
             if(forbroadcast<numThreads){
                 char* l=fgets(line,sizeof(line),queryFile);
-                if(l==NULL){
+                if(l==NULL || strcmp(line,"\n")==0){
                     break;
                 }
                 forbroadcast++;
@@ -168,7 +170,7 @@ int main(int argc,char** argv){
         }else{
             if(forbroadcast<numThreads){
                 char* l=fgets(line,sizeof(line),queryFile);
-                if(l==NULL){
+                if(l==NULL || strcmp(line,"\n")==0){
                     break;
                 }
                 forbroadcast++;
@@ -198,7 +200,7 @@ int main(int argc,char** argv){
         usleep(10000);
     }
 
-
+    sleep(10);
     exit_program=1;
     while(threadsAvailabe!=threadsCreated);
     usleep(10000);
@@ -235,47 +237,14 @@ void* query_fun(void* args){
             pthread_exit(NULL);
         }
 
-        //connect to the server
-        int sock;
-        struct sockaddr_in server;
-        sock=socket(AF_INET,SOCK_STREAM,0);
-        if(sock<0){
-            perror("Failed to create a socket");
-            continue;
-        }
-
-        server.sin_family=AF_INET;
-        server.sin_addr.s_addr=INADDR_ANY;
-        server.sin_port=htons(servPort);
-
-        struct hostent* foundhost ;
-        struct in_addr myaddress ;
-
-        inet_aton ( servIP , &myaddress ) ;
-        foundhost = gethostbyaddr (( const char *) & myaddress , sizeof ( myaddress ) , AF_INET ) ;
-
-        if(foundhost==0){
-            perror("Hosting failed");
-            continue;
-        }
-            
-        memcpy(&server.sin_addr,foundhost->h_addr_list[0],foundhost->h_length);
-        server.sin_port=htons(servPort);
-        if(connect(sock,(struct sockaddr*)&server,sizeof(server))){
-            perror("Connection failed");
-            close(sock);
-            continue;
-        }
         
-
-
-
         if ( err = pthread_mutex_lock (&circ_mutex)){ /* Lock mutex */
             perror2(" pthread_mutex_lock " , err ); 
             exit(1); 
         }
         threadsAvailabe--;
         char* query=circ_buf_pop(circ_buf);
+
         if ( err = pthread_mutex_unlock (&circ_mutex)){ /* Unlock mutex */
             perror2(" pthread_mutex_unlock " , err ); 
             exit(1); 
@@ -289,12 +258,22 @@ void* query_fun(void* args){
             exit(1); 
         }
         if(query!=NULL){
+            int sock=server_connect();
             printf("\n%s\n",query);
             write(sock,query,SERVER_WRITEBUFFER_SIZE);
             int bufferlen;
-            //read(sock,&bufferlen,sizeof(int));
-            
+            read(sock,&bufferlen,sizeof(int));
+            char* buffer=malloc(bufferlen);
+            while(1){
+                read(sock,buffer,bufferlen);
+                if(strcmp(buffer,"end_of_message")==0){
+                    break;
+                }
+                printf("%s\n",buffer);
+            }
+            free(buffer);
             free(query);
+            close(sock);
         }else{
             printf("No more queries\n");
         }
@@ -341,4 +320,37 @@ char* circ_buf_pop(circ_line_buffer* circ_buf){
         circ_buf->tail = 0;
     circ_buf->count--;
     return data;
+}
+
+int server_connect(){
+            //connect to the server
+        int sock;
+        struct sockaddr_in server;
+        sock=socket(AF_INET,SOCK_STREAM,0);
+        if(sock<0){
+            perror("Failed to create a socket");
+            return -1;
+        }
+
+        server.sin_family=AF_INET;
+        server.sin_addr.s_addr=INADDR_ANY;
+        server.sin_port=htons(servPort);
+
+        struct hostent* foundhost ;
+        struct in_addr myaddress ;
+
+        inet_aton ( servIP , &myaddress ) ;
+        foundhost = gethostbyaddr (( const char *) & myaddress , sizeof ( myaddress ) , AF_INET ) ;
+
+        if(foundhost==0){
+            perror("Hosting failed");
+            return -1;
+        }
+            
+        memcpy(&server.sin_addr,foundhost->h_addr_list[0],foundhost->h_length);
+        server.sin_port=htons(servPort);
+        while(connect(sock,(struct sockaddr*)&server,sizeof(server))<0){
+            perror("Connection failed");
+        }
+        return sock;
 }

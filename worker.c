@@ -230,7 +230,7 @@ int main(int argc,char** argv){
     if(foundhost==0){
         perror("Hosting failed");
         free(buffer);
-         exit(1);
+        exit(1);
     }
     
     memcpy(&server.sin_addr,foundhost->h_addr_list[0],foundhost->h_length);
@@ -387,7 +387,7 @@ int main(int argc,char** argv){
             perror("\nACCEPT FAILED\n");
             continue;
         }
-        printf("w: %d , c: %d\n",workersock,clientsock);
+        
         read(clientsock,buffer,buffersize);
         if(strcmp(buffer,"/listCountries")==0){
             listCountries(CountryHT);
@@ -446,9 +446,9 @@ int main(int argc,char** argv){
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
             if(strcmp(country,"NULL")!=0){
-                diseaseFrequency(DiseaseHT,disease,date1,date2,country,2);
+                diseaseFrequency(DiseaseHT,disease,date1,date2,country,2,clientsock,buffersize);
             }else{
-                diseaseFrequency(CountryHT,disease,date1,date2,country,1);
+                diseaseFrequency(CountryHT,disease,date1,date2,country,1,clientsock,buffersize);
             }
             free(disease);
             free(date1);
@@ -469,7 +469,7 @@ int main(int argc,char** argv){
             read(clientsock,buffer,buffersize);
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
-            numPatient_Adm_Dis(CountryHT,disease,date1,date2,country,0);
+            numPatient_Adm_Dis(CountryHT,disease,date1,date2,country,0,clientsock,buffersize);
             free(disease);
             free(date1);
             free(date2);
@@ -489,7 +489,7 @@ int main(int argc,char** argv){
             read(clientsock,buffer,buffersize);
             country=malloc(strlen(buffer)+1);
             strcpy(country,buffer);
-            numPatient_Adm_Dis(CountryHT,disease,date1,date2,country,1);
+            numPatient_Adm_Dis(CountryHT,disease,date1,date2,country,1,clientsock,buffersize);
             free(disease);
             free(date1);
             free(date2);
@@ -512,7 +512,7 @@ int main(int argc,char** argv){
             read(clientsock,buffer,buffersize);
             date2=malloc(strlen(buffer)+1);
             strcpy(date2,buffer);
-            topk_AgeRanges(DiseaseHT,k,country,disease,date1,date2);
+            topk_AgeRanges(DiseaseHT,k,country,disease,date1,date2,clientsock,buffersize);
             free(k);
             free(disease);
             free(date1);

@@ -227,7 +227,7 @@ void listCountries(HashTable* HT){
     }
 }
 
-void numPatient_Adm_Dis(HashTable* HT,char* disease,char* date1,char* date2,char* country,int option){   //numPatient Admissions(option=0) and Discharges(option=1) 
+void numPatient_Adm_Dis(HashTable* HT,char* disease,char* date1,char* date2,char* country,int option,int clientsock,int buffersize){   //numPatient Admissions(option=0) and Discharges(option=1) 
     if(strcmp(country,"NULL")!=0){
         int hash_key=hash_fun(country,HT->size);
         Bucket* bucket=HT->array[hash_key];
@@ -238,7 +238,12 @@ void numPatient_Adm_Dis(HashTable* HT,char* disease,char* date1,char* date2,char
                 if(strcmp(country,entry.key)==0){
                     int counter=0;
                     count_Adm_Dis(entry.RBT->Root,date1,date2,&counter,disease,option);
-                    printf("%s %d\n",entry.key,counter);
+                    //printf("%s %d\n",entry.key,counter);
+                    char* buf=malloc(buffersize);
+                    sprintf(buf,"%s %d\n\n",entry.key,counter);
+                    write(clientsock,buf,buffersize);
+                    write(clientsock,"end_of_message",buffersize);
+                    free(buf);
                     return;
                 }
             }
@@ -254,15 +259,20 @@ void numPatient_Adm_Dis(HashTable* HT,char* disease,char* date1,char* date2,char
                     memcpy(&entry,&bucket->data[j],sizeof(Entry));
                     int counter=0;
                     count_Adm_Dis(entry.RBT->Root,date1,date2,&counter,disease,option);
-                    printf("%s %d\n",entry.key,counter);
+                    //printf("%s %d\n",entry.key,counter);
+                    char* buf=malloc(buffersize);
+                    sprintf(buf,"%s %d\n\n",entry.key,counter);
+                    write(clientsock,buf,buffersize);
+                    free(buf);
                 }
                 bucket=bucket->next;
             }
         }
+        write(clientsock,"end_of_message",buffersize);
     }
 }
 
-void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* country,int option){
+void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* country,int option,int clientsock,int buffersize){
     if(strcmp(country,"NULL")!=0){
         int hash_key=hash_fun(disease,HT->size);
         if(HT->array[hash_key]!=NULL){
@@ -274,14 +284,20 @@ void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* 
                     if(strcmp(disease,entry.key)==0){
                         int counter=0;
                         countPeriod(entry.RBT->Root,date1,date2,&counter,option,country,2);
-                        printf("%s %d\n\n",disease,counter);
+                        //printf("%s %d\n\n",disease,counter);
+                        char* buf=malloc(buffersize);
+                        sprintf(buf,"%s %d\n\n",disease,counter);
+                        write(clientsock,buf,buffersize);
+                        write(clientsock,"end_of_message",buffersize);
+                        free(buf);
                         return;
                     }
                 }
                 bucket=bucket->next;
             }
         }else{
-            printf("No cases for this country.\n");
+            //printf("No cases for this country.\n");
+            write(clientsock,"No cases for this country.\n",buffersize);
         }
     }else{
         Bucket* bucket;
@@ -297,11 +313,16 @@ void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* 
                 bucket=bucket->next;
             }
         }
-        printf("%s %d\n\n",disease,counter);
+        //printf("%s %d\n\n",disease,counter);
+        char* buf=malloc(buffersize);
+        sprintf(buf,"%s %d\n\n",disease,counter);
+        write(clientsock,buf,buffersize);
+        write(clientsock,"end_of_message",buffersize);
+        free(buf);
     }
 }
 
-void topk_AgeRanges(HashTable* HT,char* k,char* country,char* disease,char* date1,char* date2){
+void topk_AgeRanges(HashTable* HT,char* k,char* country,char* disease,char* date1,char* date2,int clientsock,int buffersize){
     Bucket* bucket;
     Entry entry;
     ageRanges* agenumArr=malloc(4*sizeof(ageRanges));
@@ -334,38 +355,45 @@ void topk_AgeRanges(HashTable* HT,char* k,char* country,char* disease,char* date
         topk=4;
     }
     int perc=0; 
+    char* buf=malloc(buffersize);
     for(int i=atoi(k)-1;i>=0;i--){
         switch (agenumArr[i].index){
             case 0:
                 if(sum){
                     perc=100*((float)agenumArr[i].count/(float)sum);
                 }
-                printf("\nAge range 0-20 years: %d (%d%%)\n",agenumArr[i].count,perc);
+                sprintf(buf,"\nAge range 0-20 years: %d (%d%%)\n",agenumArr[i].count,perc);
+                write(clientsock,buf,buffersize);
                 break;
             case 1:
                 if(sum){
                     perc=100*((float)agenumArr[i].count/(float)sum);
                 }
-                printf("\nAge range 21-40 years: %d (%d%%)\n",agenumArr[i].count,perc);
+                sprintf(buf,"\nAge range 21-40 years: %d (%d%%)\n",agenumArr[i].count,perc);
+                write(clientsock,buf,buffersize);
                 break;
             case 2:
                 if(sum){
                     perc=100*((float)agenumArr[i].count/(float)sum);
                 }
-                printf("\nAge range 41-60 years: %d (%d%%)\n",agenumArr[i].count,perc);
+                sprintf(buf,"\nAge range 41-60 years: %d (%d%%)\n",agenumArr[i].count,perc);
+                write(clientsock,buf,buffersize);
                 break;
             case 3:
                 if(sum){
                     perc=100*((float)agenumArr[i].count/(float)sum);
                 }
-                printf("\nAge range 61+ years: %d (%d%%)\n",agenumArr[i].count,perc);
+                sprintf(buf,"\nAge range 61+ years: %d (%d%%)\n",agenumArr[i].count,perc);
+                write(clientsock,buf,buffersize);
                 break;
             default:
                 break;  
         }
-
+        memset(buf,0,buffersize);
     }
-    printf("\n\n");
+    sprintf(buf,"\n\n");
+    write(clientsock,buf,buffersize);
+    write(clientsock,"end_of_message",buffersize);
 }
 
 
