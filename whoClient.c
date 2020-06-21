@@ -144,6 +144,7 @@ int main(int argc,char** argv){
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_cond_init (&cvar , NULL ) ; /* Initialize condition variable */
 
     while(!feof(queryFile)){
         if(threads_ready==0){
@@ -200,7 +201,7 @@ int main(int argc,char** argv){
         usleep(10000);
     }
 
-    sleep(10);
+    sleep(1);
     exit_program=1;
     while(threadsAvailabe!=threadsCreated);
     usleep(10000);

@@ -443,7 +443,7 @@ int main(int argc,char** argv){
     printf("\n\n\n");
     
     while(1){                                   //a completely useless but less boring thing for the master to do
-        printf("Time lapsed: %d s",t++);
+        printf("Elapsed time: %d s",t++);
         sleep(1);
         fflush(stdout);
         printf("\r");

@@ -298,6 +298,7 @@ void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* 
         }else{
             //printf("No cases for this country.\n");
             write(clientsock,"No cases for this country.\n",buffersize);
+            write(clientsock,"end_of_message",buffersize);
         }
     }else{
         Bucket* bucket;
@@ -315,7 +316,7 @@ void diseaseFrequency(HashTable* HT,char* disease,char* date1,char* date2,char* 
         }
         //printf("%s %d\n\n",disease,counter);
         char* buf=malloc(buffersize);
-        sprintf(buf,"%s %d\n\n",disease,counter);
+        sprintf(buf,"%d",counter);
         write(clientsock,buf,buffersize);
         write(clientsock,"end_of_message",buffersize);
         free(buf);
